@@ -1,7 +1,10 @@
 // Required Node Packages
 var http = require('http'),
     https = require('https'),
-    tar = require('tar-stream');
+    tar = require('tar-stream'),
+    minimongo = require("minimongo");
+
+var IndexedDb = minimongo.IndexedDb;
 
 /*
  * Get URL contents viz., hostname, pathname, hash, etc
@@ -22,7 +25,7 @@ var getLocation = function(href) {
 /*
  * Fetch the tar from the 'href' passed and parse it on the fly
  */
-var fetchAndParseTar = function(href, callbackGETRequest){
+var fetchAndParseTar = function(db, href, callbackGETRequest){
   var url = getLocation(href); 
   // Setting the GET request
   var options = {
@@ -35,20 +38,19 @@ var fetchAndParseTar = function(href, callbackGETRequest){
     headers: {'password': ''}     // custom headers 
   };
 
-  var reqComplete = false;
   // Toggle 'req' definition according to network requirements:
   // Without Proxy
   // var req = https.request(options.path, function (res){
   // Under Proxy
   var req = http.request(options, function(res){
     var tarParser = tar.extract();
-    
+
     res.on('data', function (chunk) {
       tarParser.write(new Buffer(chunk));   // Transforming the 'arraybuffer' to 'Buffer' for compatibility with the Stream API
     });
-    
+
     res.on('end', tarParser.end.bind(tarParser));
-    
+
     res.on('error', function (error) {
       console.log(error);
     });
@@ -57,8 +59,14 @@ var fetchAndParseTar = function(href, callbackGETRequest){
     tarParser.on('entry', function(header, stream, callback) {
       console.log("File found " + header.name + " of size ~" + Math.round(header.size/1024) + " KB");
       stream.on('end', function() {
-        console.log("<< EOF >>");
-        callback();
+        // Always use upsert for both inserts and modifies
+        db.tcia.upsert({
+          filename: header.name,
+          size: header.size
+        }, function() {
+          console.log("<< EOF >>");
+          callback();
+        });
       })
       stream.resume();
     })
@@ -75,7 +83,18 @@ var fetchAndParseTar = function(href, callbackGETRequest){
   req.end();
 }
 
-/*  For running the code directly with node
+/*
+ * Creates the DB, Collection if not created and calls the main function
+ */
+var initFunction = function(href){
+  db = new IndexedDb({namespace: "mydb"}, function() {
+    db.addCollection("tcia", function() {
+      fetchAndParseTar(db, href, function() {});
+    });
+  }, function(err) { console.log(err); });
+}
+
+/*  For testing the code directly with node (comment db part)
 
 //href = encodeURI('https://public.cancerimagingarchive.net/nbia-download/servlet/DownloadServlet?userId=nbia_guest&includeAnnotation=true&hasAnnotation=true&seriesUid=1.3.6.1.4.1.14519.5.2.1.6279.6001.465203542815096670421396392391&sopUids=');
 href = encodeURI('http://localhost/gsoc15/tarstream');
@@ -89,4 +108,4 @@ fetchAndParseTar(href, function (data){
 });
 
 */
-module.exports = fetchAndParseTar; // export the module for browserify
+module.exports = initFunction; // export the module for browserify
