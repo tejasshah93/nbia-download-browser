@@ -1,0 +1,33 @@
+<html>
+<head>
+<title>NBIA Download Manager</title>
+<link rel="stylesheet" type="text/css" href="css/bootstrap.min.css">       
+<script type="text/javascript" src="js/jquery-1.11.2.min.js"></script>     
+<script type="text/javascript" src="js/bootstrap.min.js"></script>         
+<style>
+.hero-spacer {
+  margin-top: 40px;
+}
+</style>
+</head>
+<body>
+
+<div class="container marketing">
+  <div class="jumbotron hero-spacer text-center">
+    <h2>NBIA Download Manager</h2>
+    <br/>
+    <div class="text-left">
+    <button id="chooseDirectory" class="btn btn-default btn-large">Choose Directory</button>
+    <br/><br/>
+      <label>Path Chosen</label>
+    </div>
+    <input type="text" class="form-control" placeholder="Your directory path appears here" id="file_path" readonly>
+    <br/>
+    <p><button id="save" class="btn btn-primary" disabled>Download files</button></p>
+  </div>
+  <h4 align="center" id="output"><h4></h4>
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
