@@ -10,6 +10,8 @@
   },
   "permissions": [
     {"fileSystem": ["write", "retainEntries", "directory"]},
-    "storage"
+    "storage",
+    "http://researchweb.iiit.ac.in/*",
+    "https://public.cancerimagingarchive.net/*"
   ]
 }

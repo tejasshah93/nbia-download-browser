@@ -5,7 +5,6 @@ var collection = manifest[0],
     studyUID = manifest[2].split(".").pop().slice(-8),
     seriesUID = manifest[3].split(".").pop().slice(-8);
 
-var chosenEntry = null;
 var chooseDirButton = document.querySelector('#chooseDirectory');
 var saveFileButton = document.querySelector('#save');
 var output = document.querySelector('#output');
@@ -15,19 +14,18 @@ var errorHandler = function(e) {
 }
 
 /*
- * Writes the content of the blob to writableEntry
+ * Writes content of the blob to the writableEntry
  */
-var writeFileEntry = function(writableEntry, blob, callback) {
+var writeFileEntry = function(writableEntry, blob, cbWriteFileEntry) {
   if (!writableEntry) {
-    output.textContent = 'Error';
-    return;
+    cbWriteFileEntry("Not a valid writableEntry");
   }
 
   writableEntry.createWriter(function(writer) {
     writer.onerror = errorHandler;
     writer.onwriteend = function(){
       writer.onwriteend = function(e){
-        callback();
+        cbWriteFileEntry(null);
       }
     }
 
@@ -40,9 +38,9 @@ var writeFileEntry = function(writableEntry, blob, callback) {
 }
 
 /*
- * IO helper Function to validate write operation
+ * Helper Function for I/O to validate the write operation
  */
-var waitForIO = function (writer, callback) {
+var waitForIO = function (writer, callbackIO) {
   // Set a watchdog to avoid eventual locking
   var start = Date.now();
   var reentrant = function() {
@@ -54,62 +52,60 @@ var waitForIO = function (writer, callback) {
       console.error("Write operation taking too long, aborting!" +
           " (current writer readyState is " + writer.readyState + ")");
       writer.abort();
-    } 
+    }
     else {
-      callback();
+      callbackIO();
     }
   };
   setTimeout(reentrant, 100);
 }
 
-var asyncLoop = function(o){
-  var i = -1,
-  length = o.length;
-  
-  var loop = function(){
-    i++;
-    if(i == length){
-      o.callback();
-      return;
-    }
-    o.functionToLoop(loop, i);
-  } 
-  loop();
-}
-
-/*
- * Writes files to the chosenEntry directory and updates its status on the App
+/* 
+ * Fetches and returns the seriesUID folder location from Chrome local storage
  */
-var downloadFiles = function(chosenEntry) {
-  chrome.fileSystem.getWritableEntry(chosenEntry, function(writableEntry) {
-    output.innerHTML = "";
-    loopCtr = 4;
-    asyncLoop({
-      length : loopCtr,
-      functionToLoop : function(loop, i){
-        setTimeout(function(){
-          var fileName = "file" + (i+1) + ".txt"; 
-          writableEntry.getFile(fileName, {create:true}, function(writableEntry) {
-            var blob = new Blob(['Lorem ' + (i+1) + '\n'], {type: 'text/plain'});
-            writeFileEntry(writableEntry, blob, function(e) {
-              output.innerHTML = "Downloaded " + (i+1) + "/" + loopCtr  + "<br/>";
-              loop();
-            });
-          });
-        },1000);
-      },
-      callback : function(){
-        console.log("All done");
-        output.innerHTML += "All files downloaded successfully!<br/>";
-      }    
-    });
+var getSeriesUIDLocation = function(cbGetSeriesUIDLocation) {
+  chrome.storage.local.get('seriesUID', function(items) {
+    if (items.seriesUID) {
+      chrome.fileSystem.isRestorable(items.seriesUID, function(IsRestorable) {
+        chrome.fileSystem.restoreEntry(items.seriesUID, function(chosenEntry) {
+          cbGetSeriesUIDLocation(chosenEntry);
+        });
+      });
+    }
+    else cbGetSeriesUIDLocation(null);
   });
 }
 
 /*
- * On Click "Choose Directory": stores the directory path, creates consequent
- * directories within for collection, patientID, etc. and sets the appropriate
- * entries in Chrome local storage as per the manifest.
+ * Writes files to the chosenEntry (seriesUID) directory
+ */
+var downloadFile = function(chosenEntry, headerName, blob, cbDownloadFile) {
+  chrome.fileSystem.getWritableEntry(chosenEntry, function(writableEntry) {
+    writableEntry.getFile(headerName, {create:true}, function(writableEntry) {
+      writeFileEntry(writableEntry, blob, function(errWriteFileEntry) {
+        if(!errWriteFileEntry) {
+          console.log("File downloaded " + headerName);
+          cbDownloadFile(null);
+        }
+        else cbDownloadFile(errWriteFileEntry);
+      });
+    });
+  });
+}
+
+var updateDB = function(db, headerName, cbUpdateDB) {
+  // Always use upsert for both inserts and modifies
+  db.tcia.upsert({
+    _id: headerName,
+  }, function(err, res) {
+    cbUpdateDB(null);
+  });
+}
+
+/*
+ * OnClick "Choose Directory": stores the directory path, creates consequent
+ * directories within the same folder for collection, patientID, etc. and sets
+ * the appropriate entries in Chrome local storage as per the manifest.
  */
 chooseDirButton.addEventListener('click', function(e) {
   chrome.fileSystem.chooseEntry({type: 'openDirectory'}, function(theEntry) {
@@ -142,24 +138,18 @@ chooseDirButton.addEventListener('click', function(e) {
 });
 
 /*
- * On Click: "Download files":  Gets the previously stored folder paths from
- * Chrome local storage and calls functions to save files to the client's
- * file system
+ * OnClick: "Download files": Downloads the tar file(s) from the server, parses
+ * it, gets the previously stored folder paths from Chrome local storage and
+ * calls functions to save files to the client's file system
  */
 saveFileButton.addEventListener('click', function(e) {
-  chrome.storage.local.get('seriesUID', function(items) {
-    if (items.seriesUID) {
-      chrome.fileSystem.isRestorable(items.seriesUID, function(IsRestorable) {
-        console.log("Restoring " + items.seriesUID);
-        chrome.fileSystem.restoreEntry(items.seriesUID, function(chosenEntry) {
-          if (chosenEntry) {
-            downloadFiles(chosenEntry);
-          }
-        });
-      });
+  output.innerHTML = "";
+  var downloadURL = encodeURI('http://researchweb.iiit.ac.in/~tejas.shah/gsoc15/tarstream');
+  initFunction(downloadURL, function(errInitFunction) {
+    if (!errInitFunction) {
+      output.innerHTML += "All files downloaded successfully to selected " +
+        "location!<br/>";
     }
-    else {
-      output.innerHTML = "Error: seriesUID not present in chrome.storage.local";
-    }
+    else output.innerHTML += errInitFunction;
   });
 });
