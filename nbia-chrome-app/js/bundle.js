@@ -31622,6 +31622,7 @@ var fetchAndParseTar = function(db, href, cbFetchAndParseTar){
     tarParser.on('entry', function(header, stream, callback) {
       console.log("File found " + header.name + " of size ~" +
                   Math.round(header.size/1024) + " KB");
+      output.innerHTML += "Downloading " + header.name + "... ";
       var buffer = [];
       stream.on('data', function(data){
         buffer.push(data);
@@ -31639,6 +31640,7 @@ var fetchAndParseTar = function(db, href, cbFetchAndParseTar){
                     updateDB(db, header.name, function(errUpdateDB) {
                       if(!errUpdateDB) {
                         console.log("<< EOF >>");
+                        output.innerHTML += " Done.<br/>";
                         callback();
                       }
                       //else cbFetchAndParseTar(errUpdateDB);

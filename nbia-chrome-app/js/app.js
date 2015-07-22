@@ -1,13 +1,15 @@
-var manifest = "LIDC-IDRI|LIDC-IDRI-0018|1.3.6.1.4.1.14519.5.2.1.6279.6001.232707938322315602970938283659|1.3.6.1.4.1.14519.5.2.1.6279.6001.465203542815096670421396392391|Yes|2|14044920|8673|http://localhost:21080/wsrf/services/cagrid/NCIACoreService|TCIA production 1|true";
+/*var manifest = "LIDC-IDRI|LIDC-IDRI-0018|1.3.6.1.4.1.14519.5.2.1.6279.6001.232707938322315602970938283659|1.3.6.1.4.1.14519.5.2.1.6279.6001.465203542815096670421396392391|Yes|2|14044920|8673|http://localhost:21080/wsrf/services/cagrid/NCIACoreService|TCIA production 1|true";
 manifest = manifest.split("|");
 var collection = manifest[0],
     patientID = manifest[1],
     studyUID = manifest[2].split(".").pop().slice(-8),
-    seriesUID = manifest[3].split(".").pop().slice(-8);
+    seriesUID = manifest[3].split(".").pop().slice(-8);*/
 
+var downloadManifestButton = document.querySelector('#downloadManifest');
 var chooseDirButton = document.querySelector('#chooseDirectory');
 var saveFileButton = document.querySelector('#save');
 var output = document.querySelector('#output');
+var jnlpURL;
 
 var errorHandler = function(e) {
   console.error(e);
@@ -102,6 +104,65 @@ var updateDB = function(db, headerName, cbUpdateDB) {
   });
 }
 
+var downloadManifestSchema = function(cbDownloadManifestSchema) {
+  var x = new XMLHttpRequest();
+  var manifestUrl = "http://researchweb.iiit.ac.in/~tejas.shah/gsoc15/manifest.txt";
+  //var manifestUrl = jnlpDownloadServerUrl + "?serverjnlpfileloc=" + jnlpArgument;
+  console.log(jnlpDownloadServerUrl + "?serverjnlpfileloc=" + jnlpArgument);
+  //console.log(manifestUrl);
+  x.open("GET", manifestUrl, true);
+  x.onreadystatechange = function() {
+    if (x.readyState == 4 && x.status == 200) {
+      console.log(x.responseText);
+      // ToDo Consider multiple entries in manifest. Currently for single entry.
+      manifest = x.responseText.split("|");
+      collection = manifest[0];
+      patientID = manifest[1];
+      studyUID = manifest[2].split(".").pop().slice(-8);
+      seriesUID = manifest[3].split(".").pop().slice(-8);
+      cbDownloadManifestSchema();
+    }
+  }
+  x.send(null);
+}
+
+downloadManifestButton.addEventListener('click', function(e) {
+  var x = new XMLHttpRequest();
+  x.open("GET", jnlpURL, true);
+  x.onreadystatechange = function() {
+    if (x.readyState == 4 && x.status == 200) {
+      var doc = x.responseText;
+      if (window.DOMParser) {
+        parser = new DOMParser();
+        xmlDoc = parser.parseFromString(doc,"text/xml");        
+      }
+      else {
+        alert("Error: window.DOMParser not supported");
+      }     
+      jnlpArgument = xmlDoc.getElementsByTagName("argument")[0].childNodes[0].nodeValue;
+      var properties = xmlDoc.getElementsByTagName('property');
+      for(var i = 0; i < properties.length; i++) {
+        if (properties[i].getAttribute('name') == "jnlp.includeAnnotation")
+          jnlpIncludeAnnotation = true;
+        else if (properties[i].getAttribute('name') == "jnlp.userId")
+          jnlpUserId = properties[i].getAttribute('value');
+        else if (properties[i].getAttribute('name') == "jnlp.password")
+          jnlpPassword = properties[i].getAttribute('value');
+        else if (properties[i].getAttribute('name') == "jnlp.downloadServerUrl")
+          jnlpDownloadServerUrl = properties[i].getAttribute('value');
+      }
+      downloadManifestSchema(function() {
+        console.log(collection);
+        console.log(patientID);
+        console.log(studyUID);
+        console.log(seriesUID);
+        chooseDirButton.disabled = false;
+      });
+    }
+  }
+  x.send(null);
+});
+
 /*
  * OnClick "Choose Directory": stores the directory path, creates consequent
  * directories within the same folder for collection, patientID, etc. and sets
@@ -152,4 +213,26 @@ saveFileButton.addEventListener('click', function(e) {
     }
     else output.innerHTML += errInitFunction;
   });
+});
+
+/* launchData object attributes
+console.log(launchData);
+console.log(launchData.id);
+console.log(launchData.url);
+console.log(launchData.referrerUrl);
+*/
+
+$(document).ready(function() {
+  console.log("Chrome Application loaded. Request JNLP URL");
+  chrome.runtime.sendMessage({appLoad: "true"}, function(response) {});
+});
+
+chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
+  if (message.jnlpURL){
+    console.log("onMessage received JNLP URL in app.js");
+    console.log("message.jnlpURL: " + message.jnlpURL);
+    jnlpURL = message.jnlpURL;
+    downloadManifestButton.disabled = false;
+    sendResponse({ack: "true"});
+  }
 });

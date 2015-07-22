@@ -13,5 +13,16 @@
     "storage",
     "http://researchweb.iiit.ac.in/*",
     "https://public.cancerimagingarchive.net/*"
-  ]
+  ],
+  "url_handlers": {
+    "OpenDownloadManager": {
+      "matches": [
+        "http://researchweb.iiit.ac.in/~tejas.shah/gsoc15/dummy.html"
+      ],
+        "title": "Open Download Manager"
+    }
+  },
+  "externally_connectable": {
+    "matches": ["http://researchweb.iiit.ac.in/*"]
+  }
 }
