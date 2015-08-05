@@ -14,7 +14,6 @@ var createSeriesFolder = function(db, entry, series, cbCreateSeriesFolder) {
           'seriesUID': doc.seriesUID,
           'seriesUIDShort': doc.seriesUIDShort,
           'hasAnnotation': doc.hasAnnotation,
-          'size': doc.size,
           'fsPath': chrome.fileSystem.retainEntry(entry),
           'files': []
         }, function() {
@@ -176,7 +175,7 @@ var insertPatientTable = function(db, manifest, cbInsertPatientTable) {
   });
 }
 
-var insertSeriesTable = function(db, seriesUID, hasAnnotation, seriesSize, cbInsertSeriesTable) {
+var insertSeriesTable = function(db, seriesUID, hasAnnotation, cbInsertSeriesTable) {
   db.tciaSchema.findOne({'seriesUID': seriesUID}, {}, function(seriesExist) {
     if(!seriesExist) {
       var seriesUIDShort = seriesUID.split(".").pop().slice(-8);
@@ -186,8 +185,7 @@ var insertSeriesTable = function(db, seriesUID, hasAnnotation, seriesSize, cbIns
         'type': "seriesDetails",
         'seriesUID': seriesUID,
         'seriesUIDShort': seriesUIDShort,
-        'hasAnnotation': hasAnnotationBool,
-        'size': seriesSize
+        'hasAnnotation': hasAnnotationBool
       }, function() {
           cbInsertSeriesTable(null);
       });
@@ -196,7 +194,7 @@ var insertSeriesTable = function(db, seriesUID, hasAnnotation, seriesSize, cbIns
   });
 }
 
-var addSeriesUID = function(db, studyUID, seriesUID, hasAnnotation, seriesSize, cbAddSeriesUID) {
+var addSeriesUID = function(db, studyUID, seriesUID, hasAnnotation, cbAddSeriesUID) {
   db.tciaSchema.findOne({'studyUID': studyUID}, {}, function(doc) {
     var series = doc.series.concat([seriesUID]);
     db.tciaSchema.upsert({
@@ -204,7 +202,7 @@ var addSeriesUID = function(db, studyUID, seriesUID, hasAnnotation, seriesSize, 
       'studyUID': studyUID,
       'series': series
     }, function() {
-      insertSeriesTable(db, seriesUID, hasAnnotation, seriesSize, function(errInsertSeriesTable) {
+      insertSeriesTable(db, seriesUID, hasAnnotation, function(errInsertSeriesTable) {
         cbAddSeriesUID(null);
       }); 
     });
@@ -214,8 +212,7 @@ var addSeriesUID = function(db, studyUID, seriesUID, hasAnnotation, seriesSize, 
 var insertStudyTable = function(db, manifest, cbInsertStudyTable) {
   var studyUID = manifest[2].split(".").pop().slice(-8),
   seriesUID = manifest[3],
-  hasAnnotation = manifest[4],
-  seriesSize = Math.round((manifest[6] + manifest[7])*1.0/1024);
+  hasAnnotation = manifest[4];
 
   db.tciaSchema.findOne({'studyUID': studyUID}, {}, function(studyExist) {
     if(!studyExist) {
@@ -224,13 +221,13 @@ var insertStudyTable = function(db, manifest, cbInsertStudyTable) {
         'studyUID': studyUID,
         'series': []
       }, function() {
-        addSeriesUID(db, studyUID, seriesUID, hasAnnotation, seriesSize, function(db) {
+        addSeriesUID(db, studyUID, seriesUID, hasAnnotation, function(db) {
           cbInsertStudyTable(null);
         });
       });
     }
     else if (studyExist.series.indexOf(seriesUID) == -1) {
-      addSeriesUID(db, studyUID, seriesUID, hasAnnotation, seriesSize, function(db) {
+      addSeriesUID(db, studyUID, seriesUID, hasAnnotation, function(db) {
         cbInsertStudyTable(null);
       });
     }
@@ -33300,7 +33297,7 @@ var initDownloadMgr = function(jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, 
               + jnlpUserId + '&includeAnnotation=' + jnlpIncludeAnnotation +
               '&hasAnnotation=' + item.hasAnnotation + '&seriesUid=' +
               item.seriesUID + '&sopUids=');
-          console.log(href + " (size ~" + item.size + " KB)");          
+          console.log(href);          
           fetchAndParseTar(db, item.seriesUIDShort, href, jnlpPassword, function(errFetchAndParseTar) {
             if(!errFetchAndParseTar) callbackItem();
             else callbackItem(errFetchAndParseTar);
