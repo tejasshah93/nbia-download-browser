@@ -1,5 +1,6 @@
 {
   "name": "NBIA Download Manager",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1wLhYJjxZWuYRcbbZf870sJW6cuM5Z72xMlJEy1I1u/5Y5PivatIxaweDNxlPpVKKCxIwdCy13O6Li6OlwnE/fyRD0PftzZIiWkkF7KLyDXmmliLWcPdGvV4kykyg4NKFvCaMW3WkIa9oH8UJT/6DDTTqPLGUAWTa8acwOIDLhrHzyU/xYRcNj90rnF2aWmSPqZFEGRGKHozklDPvVGiSse6H/bruhiMniDnmIg5LxPstUWM4XKEQ8uo/TGc52H16k9k9hu/BE5lWTA66XeSzduHpS8e0uUtuD1HDkGpytTYBDrWSJ+HDYy9QILZph/GjfkB6ODlMAQguvmZ4YY7QwIDAQAB",
   "version": "1.0",
   "manifest_version": 2,
   "minimum_chrome_version": "31",
@@ -12,12 +13,14 @@
     {"fileSystem": ["write", "retainEntries", "directory"]},
     "storage",
     "http://researchweb.iiit.ac.in/*",
-    "https://public.cancerimagingarchive.net/*"
+    "https://public.cancerimagingarchive.net/*",
+    "https://cancerimagingarchive.net/*",
+    "http://54.68.32.118/*"
   ],
   "url_handlers": {
     "OpenDownloadManager": {
       "matches": [
-        "http://researchweb.iiit.ac.in/~tejas.shah/gsoc15/dummy.html"
+        "http://researchweb.iiit.ac.in/~tejas.shah/gsoc15/demoApp/launch"
       ],
         "title": "Open Download Manager"
     }
