@@ -1,0 +1,93 @@
+// Required Node Packages
+var async = require('async');
+var minimongo = require("minimongo");
+var IndexedDb = minimongo.IndexedDb;
+
+var createSeriesFolder = function(db, entry, series, cbCreateSeriesFolder) {
+  async.eachSeries(series, function(seriesItem, cbSeries) {
+    db.tciaSchema.findOne({'seriesUID': seriesItem}, {}, function(doc) {
+      entry.getDirectory(doc.seriesUIDShort, {create:true}, function(entry) {
+        db.tciaSchema.upsert({
+          '_id': doc.seriesUIDShort,
+          'type': doc.type,
+          'seriesUID': doc.seriesUID,
+          'seriesUIDShort': doc.seriesUIDShort,
+          'hasAnnotation': doc.hasAnnotation,
+          'size': doc.size,
+          'fsPath': chrome.fileSystem.retainEntry(entry),
+          'files': []
+        }, function() {
+          cbSeries();
+        });
+      });
+    });
+  }, function(errSeries) {
+    if(!errSeries)  cbCreateSeriesFolder();
+  });
+}
+
+var createStudiesFolder = function(db, entry, studies, cbCreateStudiesFolder) {
+  async.eachSeries(studies, function(study, cbStudy) {
+    entry.getDirectory(study, {create:true}, function(entry) {
+        db.tciaSchema.findOne({'studyUID': study}, {}, function(doc) {
+          createSeriesFolder(db, entry, doc.series, function(){
+            cbStudy();
+          });
+        });
+    });
+  }, function(errStudy) {
+    if(!errStudy)  cbCreateStudiesFolder();
+  });
+}
+
+var createPatientsFolder = function(db, entry, patients, cbCreatePatientsFolder) {
+  async.eachSeries(patients, function(patient, cbPatient) {
+    entry.getDirectory(patient, {create:true}, function(entry) {
+        db.tciaSchema.findOne({'patientID': patient}, {}, function(doc) {
+          createStudiesFolder(db, entry, doc.studies, function(){
+            cbPatient();
+          });
+        });
+    });
+  }, function(errPatient) {
+    if(!errPatient)  cbCreatePatientsFolder();
+  });
+}
+
+var createCollectionsFolder = function(db, theEntry, collections, cbCreateCollectionFolder) {
+  async.eachSeries(collections, function(collection, cbCollection) {
+    chrome.fileSystem.getWritableEntry(theEntry, function(entry) {
+      entry.getDirectory(collection._id, {create:true}, function(entry) {
+        db.tciaSchema.findOne({'collection': collection._id}, {}, function(doc) {
+          createPatientsFolder(db, entry, doc.patients, function(){
+            cbCollection();
+          });
+        });
+      });
+    });
+  }, function(errCollection) {
+    if(!errCollection)  cbCreateCollectionFolder();
+  });
+}
+
+var createFolderHierarchy = function(theEntry, cbCreateFolderHierarchy) {
+  new IndexedDb({namespace: "mydb"}, function(db) {
+    db.addCollection("tciaSchema", function() {
+      db.tciaSchema.upsert({
+        '_id': "chosenDir",
+        'chosenDirFolder': chrome.fileSystem.retainEntry(theEntry)
+      }, function() {
+        db.tciaSchema.find({'type': "collection"}).fetch(function(collections) {
+          createCollectionsFolder(db, theEntry, collections, function(){
+            cbCreateFolderHierarchy();
+          });
+        });
+      });
+    });
+  }, function(err) {
+    console.log(err);
+    cbCreateFolderHierarchy(err);
+  });
+}
+
+module.exports.createFolderHierarchy = createFolderHierarchy;
