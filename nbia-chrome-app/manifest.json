@@ -13,8 +13,7 @@
     {"fileSystem": ["write", "retainEntries", "directory"]},
     "storage",
     "http://researchweb.iiit.ac.in/*",
-    "https://public.cancerimagingarchive.net/*",
-    "https://cancerimagingarchive.net/*",
+    "https://*.cancerimagingarchive.net/*",
     "http://54.68.32.118/*"
   ],
   "url_handlers": {

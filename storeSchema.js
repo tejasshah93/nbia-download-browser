@@ -1,5 +1,6 @@
 // Required Node Packages
-var minimongo = require("minimongo");
+var async = require('async');
+var minimongo = require('minimongo');
 var IndexedDb = minimongo.IndexedDb;
 
 var addPatientID = function(db, collection, patientID, cbAddPatientID) {
@@ -57,7 +58,7 @@ var addStudyUID = function(db, patientID, studyUID, cbAddStudyUID) {
 
 var insertPatientTable = function(db, manifest, cbInsertPatientTable) {
   var patientID = manifest[1],
-  studyUID = manifest[2].split(".").pop().slice(-8);
+  studyUID = manifest[2].slice(-8);
 
   db.tciaSchema.findOne({'patientID': patientID}, {}, function(patientExist) {
     if(!patientExist) {
@@ -83,10 +84,10 @@ var insertPatientTable = function(db, manifest, cbInsertPatientTable) {
 var insertSeriesTable = function(db, seriesUID, hasAnnotation, cbInsertSeriesTable) {
   db.tciaSchema.findOne({'seriesUID': seriesUID}, {}, function(seriesExist) {
     if(!seriesExist) {
-      var seriesUIDShort = seriesUID.split(".").pop().slice(-8);
+      var seriesUIDShort = seriesUID.slice(-8);
       var hasAnnotationBool = (hasAnnotation == "Yes" ? "true" : "false");
       db.tciaSchema.upsert({
-        '_id': seriesUIDShort,
+        '_id': seriesUID,
         'type': "seriesDetails",
         'seriesUID': seriesUID,
         'seriesUIDShort': seriesUIDShort,
@@ -101,7 +102,7 @@ var insertSeriesTable = function(db, seriesUID, hasAnnotation, cbInsertSeriesTab
 
 var addSeriesUID = function(db, studyUID, seriesUID, hasAnnotation, cbAddSeriesUID) {
   db.tciaSchema.findOne({'studyUID': studyUID}, {}, function(doc) {
-    var series = doc.series.concat([seriesUID]);
+    var series = doc.series.concat([seriesUID.slice(-8)]);
     db.tciaSchema.upsert({
       '_id': studyUID,
       'studyUID': studyUID,
@@ -109,13 +110,13 @@ var addSeriesUID = function(db, studyUID, seriesUID, hasAnnotation, cbAddSeriesU
     }, function() {
       insertSeriesTable(db, seriesUID, hasAnnotation, function(errInsertSeriesTable) {
         cbAddSeriesUID(null);
-      }); 
+      });
     });
   })
 }
 
 var insertStudyTable = function(db, manifest, cbInsertStudyTable) {
-  var studyUID = manifest[2].split(".").pop().slice(-8),
+  var studyUID = manifest[2].slice(-8),
   seriesUID = manifest[3],
   hasAnnotation = manifest[4];
 
@@ -140,42 +141,28 @@ var insertStudyTable = function(db, manifest, cbInsertStudyTable) {
   });
 }
 
-var asyncLoop = function(o) {
-  var i = -1, 
-  length = o.length;
-
-  var loop = function() {
-    i++;
-    if (i == length) {
-      o.callback();
-      return;
-    }
-    o.functionToLoop(loop, i);
-  } 
-  loop();
-}
-
 var storeSchema = function(schema, cbStoreSchema) {
-  var manifestLen = schema.length - 1;
+  var manifestLen = schema.length;
   console.log("Total manifest splits " + manifestLen);
   new IndexedDb({namespace: "mydb"}, function(db) {
-    db.addCollection("tciaSchema", function() {      
-      asyncLoop({
-        length : manifestLen,
-        functionToLoop : function(loop, i) {
-          var manifest = schema[i].split("|");
-          insertCollectionTable(db, manifest, function(errInsertCollectionTable) {
-            insertPatientTable(db, manifest, function(errInsertPatientTable) {
-              insertStudyTable(db, manifest, function(errInsertStudyTable) {
-                loop();
-              });
+    db.addCollection("tciaSchema", function() {
+      async.eachSeries(schema, function(manifest, cbManifest){
+        manifest = manifest.split("|");
+        insertCollectionTable(db, manifest, function(errInsertCollectionTable) {
+          insertPatientTable(db, manifest, function(errInsertPatientTable) {
+            insertStudyTable(db, manifest, function(errInsertStudyTable) {
+              cbManifest();
             });
           });
-        },
-        callback : function() {
+        });
+      }, function(errManifest) {
+        if(!errManifest) {
           console.log('TCIA Manifest schema successfully stored');
           cbStoreSchema(null);
-        }    
+        }
+        else {
+          cbStoreSchema(errManifest);
+        }
       });
     });
   }, function(err) {

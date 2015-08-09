@@ -4,11 +4,11 @@ var minimongo = require("minimongo");
 var IndexedDb = minimongo.IndexedDb;
 
 var createSeriesFolder = function(db, entry, series, cbCreateSeriesFolder) {
-  async.eachSeries(series, function(seriesItem, cbSeries) {
-    db.tciaSchema.findOne({'seriesUID': seriesItem}, {}, function(doc) {
+  async.each(series, function(seriesItem, cbSeries) {
+    db.tciaSchema.findOne({'seriesUIDShort': seriesItem}, {}, function(doc) {
       entry.getDirectory(doc.seriesUIDShort, {create:true}, function(entry) {
         db.tciaSchema.upsert({
-          '_id': doc.seriesUIDShort,
+          '_id': doc._id,
           'type': doc.type,
           'seriesUID': doc.seriesUID,
           'seriesUIDShort': doc.seriesUIDShort,
@@ -26,7 +26,7 @@ var createSeriesFolder = function(db, entry, series, cbCreateSeriesFolder) {
 }
 
 var createStudiesFolder = function(db, entry, studies, cbCreateStudiesFolder) {
-  async.eachSeries(studies, function(study, cbStudy) {
+  async.each(studies, function(study, cbStudy) {
     entry.getDirectory(study, {create:true}, function(entry) {
         db.tciaSchema.findOne({'studyUID': study}, {}, function(doc) {
           createSeriesFolder(db, entry, doc.series, function(){
@@ -40,7 +40,7 @@ var createStudiesFolder = function(db, entry, studies, cbCreateStudiesFolder) {
 }
 
 var createPatientsFolder = function(db, entry, patients, cbCreatePatientsFolder) {
-  async.eachSeries(patients, function(patient, cbPatient) {
+  async.each(patients, function(patient, cbPatient) {
     entry.getDirectory(patient, {create:true}, function(entry) {
         db.tciaSchema.findOne({'patientID': patient}, {}, function(doc) {
           createStudiesFolder(db, entry, doc.studies, function(){
@@ -54,7 +54,7 @@ var createPatientsFolder = function(db, entry, patients, cbCreatePatientsFolder)
 }
 
 var createCollectionsFolder = function(db, theEntry, collections, cbCreateCollectionFolder) {
-  async.eachSeries(collections, function(collection, cbCollection) {
+  async.each(collections, function(collection, cbCollection) {
     chrome.fileSystem.getWritableEntry(theEntry, function(entry) {
       entry.getDirectory(collection._id, {create:true}, function(entry) {
         db.tciaSchema.findOne({'collection': collection._id}, {}, function(doc) {

@@ -136,7 +136,7 @@ var updateFileDB = function(db, headerName, seriesUIDShort, downloadFlag, cbUpda
   db.tciaSchema.findOne({'seriesUIDShort': seriesUIDShort}, {}, function(doc) {
     updateFilesArray(doc.files, headerName, downloadFlag, function(files){
       db.tciaSchema.upsert({
-        '_id': doc.seriesUIDShort,
+        '_id': doc._id,
         'type': doc.type,
         'seriesUID': doc.seriesUID,
         'seriesUIDShort': doc.seriesUIDShort,
@@ -253,7 +253,7 @@ var initDownloadMgr = function(jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, 
   new IndexedDb({namespace: "mydb"}, function(db) {
     db.addCollection("tciaSchema", function() {      
       db.tciaSchema.find({'type': "seriesDetails"}).fetch(function(result) {
-        async.eachSeries(result, function(item, callbackItem){
+        async.eachLimit(result, 3, function(item, callbackItem){
           var href = encodeURI('https://public.cancerimagingarchive.net/nbia-download/servlet/DownloadServlet?userId='
               + jnlpUserId + '&includeAnnotation=' + jnlpIncludeAnnotation +
               '&hasAnnotation=' + item.hasAnnotation + '&seriesUid=' +

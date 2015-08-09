@@ -27,7 +27,7 @@ var downloadManifestSchema = function(cbDownloadManifestSchema) {
   x.onreadystatechange = function() {
     if (x.readyState == 4 && x.status == 200) {
       console.log(x.responseText);
-      var schema = x.responseText.split("\n");
+      var schema = x.responseText.trim().split("\n");
       bundle.storeSchema(schema, function(errStoreSchema) {
         cbDownloadManifestSchema();
       });
