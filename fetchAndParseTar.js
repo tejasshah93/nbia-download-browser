@@ -155,6 +155,9 @@ var updateFileDB = function(db, headerName, seriesUIDShort, downloadFlag, cbUpda
  */
 var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchAndParseTar){
   var url = parseURL(href);
+  var chunkDownload = 0,
+  totalLength = $('#displaySchema').DataTable().cell( $('#row_' + seriesUIDShort)[0], 4).data();
+  console.log("totalLength " + totalLength);
   var options = {
     protocol: url.protocol,
     host: url.host,
@@ -169,6 +172,13 @@ var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchA
 
     res.on('data', function (chunk) {
       // Transforming the 'arraybuffer' to 'Buffer' for compatibility with the Stream API
+      chunkDownload += chunk.length;
+      console.log("chunkDownload  " + chunkDownload);
+      var updateLength = Math.round((chunkDownload*1.0)/1024/1024/totalLength*100);
+      if(updateLength > 100)
+        updateLength = 100;
+      console.log("updateLength " + updateLength);
+      $('#displaySchema').DataTable().cell( $('#row_' + seriesUIDShort)[0], 6).data(updateLength+"%").draw();
       tarParser.write(new Buffer(chunk));
     });
 
@@ -184,6 +194,7 @@ var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchA
       var downloadFlag = false;
       console.log("File found " + header.name + " of size ~" +
           Math.round(header.size/1024) + " KB");
+
       updateFileDB(db, header.name, seriesUIDShort, downloadFlag, function(){
         var buffer = [];
         stream.on('data', function(data){
@@ -234,6 +245,7 @@ var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchA
 
     .on('finish', function(){
       console.log("Tar files processed successfully");
+      chunkDownload = 0;
       cbFetchAndParseTar(null);
     });
   });
@@ -258,16 +270,23 @@ var initDownloadMgr = function(jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, 
               + jnlpUserId + '&includeAnnotation=' + jnlpIncludeAnnotation +
               '&hasAnnotation=' + item.hasAnnotation + '&seriesUid=' +
               item.seriesUID + '&sopUids=');
-          console.log(href);          
+          console.log(href);
+          $('#displaySchema').DataTable().cell( $('#row_' + item.seriesUIDShort)[0], 7).data('Downloading').draw();
           fetchAndParseTar(db, item.seriesUIDShort, href, jnlpPassword, function(errFetchAndParseTar) {
-            if(!errFetchAndParseTar) callbackItem();
-            else callbackItem(errFetchAndParseTar);
+            if(!errFetchAndParseTar) {
+              $('#displaySchema').DataTable().cell( $('#row_' + item.seriesUIDShort)[0], 7).data('Complete').draw();
+              callbackItem();
+            }
+            else {
+              $('#displaySchema').DataTable().cell( $('#row_' + item.seriesUIDShort)[0], 7).data('Error').draw();
+              callbackItem(errFetchAndParseTar);
+            }
           });
         }, function(errSeriesProcess){
-          console.log("All series downloaded successfully");
+          console.log("All series downloaded successfully")
           db.removeCollection("tciaSchema", function(){
             if(!errSeriesProcess) cbInitFunction(null);
-            else cbInitFunction(err);
+            else cbInitFunction(errSeriesProcess);
           });
         });
       });

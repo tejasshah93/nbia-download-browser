@@ -1,5 +1,5 @@
 chrome.app.runtime.onLaunched.addListener(function(launchData) {
-  chrome.app.window.create('index.html', {id:"NBIA-Download-Manager", innerBounds: {width: 800, height: 500}}, function(win) {
+  chrome.app.window.create('index.html', {id:"NBIA-Download-Manager", innerBounds: {width: 1024, height: 768}}, function(win) {
     win.contentWindow.launchData = launchData;
   });
 });

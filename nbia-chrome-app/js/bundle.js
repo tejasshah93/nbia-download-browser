@@ -5,15 +5,17 @@ var minimongo = require("minimongo");
 var IndexedDb = minimongo.IndexedDb;
 
 var createSeriesFolder = function(db, entry, series, cbCreateSeriesFolder) {
-  async.eachSeries(series, function(seriesItem, cbSeries) {
-    db.tciaSchema.findOne({'seriesUID': seriesItem}, {}, function(doc) {
+  async.each(series, function(seriesItem, cbSeries) {
+    db.tciaSchema.findOne({'seriesUIDShort': seriesItem}, {}, function(doc) {
       entry.getDirectory(doc.seriesUIDShort, {create:true}, function(entry) {
         db.tciaSchema.upsert({
-          '_id': doc.seriesUIDShort,
+          '_id': doc._id,
           'type': doc.type,
           'seriesUID': doc.seriesUID,
           'seriesUIDShort': doc.seriesUIDShort,
           'hasAnnotation': doc.hasAnnotation,
+          'numberDCM': doc.numberDCM,
+          'size': doc.size,
           'fsPath': chrome.fileSystem.retainEntry(entry),
           'files': []
         }, function() {
@@ -27,7 +29,7 @@ var createSeriesFolder = function(db, entry, series, cbCreateSeriesFolder) {
 }
 
 var createStudiesFolder = function(db, entry, studies, cbCreateStudiesFolder) {
-  async.eachSeries(studies, function(study, cbStudy) {
+  async.each(studies, function(study, cbStudy) {
     entry.getDirectory(study, {create:true}, function(entry) {
         db.tciaSchema.findOne({'studyUID': study}, {}, function(doc) {
           createSeriesFolder(db, entry, doc.series, function(){
@@ -41,7 +43,7 @@ var createStudiesFolder = function(db, entry, studies, cbCreateStudiesFolder) {
 }
 
 var createPatientsFolder = function(db, entry, patients, cbCreatePatientsFolder) {
-  async.eachSeries(patients, function(patient, cbPatient) {
+  async.each(patients, function(patient, cbPatient) {
     entry.getDirectory(patient, {create:true}, function(entry) {
         db.tciaSchema.findOne({'patientID': patient}, {}, function(doc) {
           createStudiesFolder(db, entry, doc.studies, function(){
@@ -55,7 +57,7 @@ var createPatientsFolder = function(db, entry, patients, cbCreatePatientsFolder)
 }
 
 var createCollectionsFolder = function(db, theEntry, collections, cbCreateCollectionFolder) {
-  async.eachSeries(collections, function(collection, cbCollection) {
+  async.each(collections, function(collection, cbCollection) {
     chrome.fileSystem.getWritableEntry(theEntry, function(entry) {
       entry.getDirectory(collection._id, {create:true}, function(entry) {
         db.tciaSchema.findOne({'collection': collection._id}, {}, function(doc) {
@@ -94,7 +96,8 @@ module.exports.createFolderHierarchy = createFolderHierarchy;
 
 },{"async":3,"minimongo":4}],2:[function(require,module,exports){
 // Required Node Packages
-var minimongo = require("minimongo");
+var async = require('async');
+var minimongo = require('minimongo');
 var IndexedDb = minimongo.IndexedDb;
 
 var addPatientID = function(db, collection, patientID, cbAddPatientID) {
@@ -152,7 +155,7 @@ var addStudyUID = function(db, patientID, studyUID, cbAddStudyUID) {
 
 var insertPatientTable = function(db, manifest, cbInsertPatientTable) {
   var patientID = manifest[1],
-  studyUID = manifest[2].split(".").pop().slice(-8);
+  studyUID = manifest[2].slice(-8);
 
   db.tciaSchema.findOne({'patientID': patientID}, {}, function(patientExist) {
     if(!patientExist) {
@@ -175,17 +178,22 @@ var insertPatientTable = function(db, manifest, cbInsertPatientTable) {
   });
 }
 
-var insertSeriesTable = function(db, seriesUID, hasAnnotation, cbInsertSeriesTable) {
+var insertSeriesTable = function(db, seriesUID, manifest, cbInsertSeriesTable) {
   db.tciaSchema.findOne({'seriesUID': seriesUID}, {}, function(seriesExist) {
     if(!seriesExist) {
-      var seriesUIDShort = seriesUID.split(".").pop().slice(-8);
+      var seriesUIDShort = seriesUID.slice(-8),
+      hasAnnotation = manifest[4],
+      numberDCM = manifest[5],
+      size = Math.round((((parseInt(manifest[6]) + parseInt(manifest[7]))*1.0)/1024/1024)*100)/100;
       var hasAnnotationBool = (hasAnnotation == "Yes" ? "true" : "false");
       db.tciaSchema.upsert({
-        '_id': seriesUIDShort,
+        '_id': seriesUID,
         'type': "seriesDetails",
         'seriesUID': seriesUID,
         'seriesUIDShort': seriesUIDShort,
-        'hasAnnotation': hasAnnotationBool
+        'hasAnnotation': hasAnnotationBool,
+        'numberDCM': numberDCM,
+        'size': size
       }, function() {
           cbInsertSeriesTable(null);
       });
@@ -194,25 +202,24 @@ var insertSeriesTable = function(db, seriesUID, hasAnnotation, cbInsertSeriesTab
   });
 }
 
-var addSeriesUID = function(db, studyUID, seriesUID, hasAnnotation, cbAddSeriesUID) {
+var addSeriesUID = function(db, studyUID, seriesUID, manifest, cbAddSeriesUID) {
   db.tciaSchema.findOne({'studyUID': studyUID}, {}, function(doc) {
-    var series = doc.series.concat([seriesUID]);
+    var series = doc.series.concat([seriesUID.slice(-8)]);
     db.tciaSchema.upsert({
       '_id': studyUID,
       'studyUID': studyUID,
       'series': series
     }, function() {
-      insertSeriesTable(db, seriesUID, hasAnnotation, function(errInsertSeriesTable) {
+      insertSeriesTable(db, seriesUID, manifest, function(errInsertSeriesTable) {
         cbAddSeriesUID(null);
-      }); 
+      });
     });
   })
 }
 
 var insertStudyTable = function(db, manifest, cbInsertStudyTable) {
-  var studyUID = manifest[2].split(".").pop().slice(-8),
-  seriesUID = manifest[3],
-  hasAnnotation = manifest[4];
+  var studyUID = manifest[2].slice(-8),
+  seriesUID = manifest[3];
 
   db.tciaSchema.findOne({'studyUID': studyUID}, {}, function(studyExist) {
     if(!studyExist) {
@@ -221,13 +228,13 @@ var insertStudyTable = function(db, manifest, cbInsertStudyTable) {
         'studyUID': studyUID,
         'series': []
       }, function() {
-        addSeriesUID(db, studyUID, seriesUID, hasAnnotation, function(db) {
+        addSeriesUID(db, studyUID, seriesUID, manifest, function(db) {
           cbInsertStudyTable(null);
         });
       });
     }
     else if (studyExist.series.indexOf(seriesUID) == -1) {
-      addSeriesUID(db, studyUID, seriesUID, hasAnnotation, function(db) {
+      addSeriesUID(db, studyUID, seriesUID, manifest, function(db) {
         cbInsertStudyTable(null);
       });
     }
@@ -235,42 +242,28 @@ var insertStudyTable = function(db, manifest, cbInsertStudyTable) {
   });
 }
 
-var asyncLoop = function(o) {
-  var i = -1, 
-  length = o.length;
-
-  var loop = function() {
-    i++;
-    if (i == length) {
-      o.callback();
-      return;
-    }
-    o.functionToLoop(loop, i);
-  } 
-  loop();
-}
-
 var storeSchema = function(schema, cbStoreSchema) {
-  var manifestLen = schema.length - 1;
+  var manifestLen = schema.length;
   console.log("Total manifest splits " + manifestLen);
   new IndexedDb({namespace: "mydb"}, function(db) {
-    db.addCollection("tciaSchema", function() {      
-      asyncLoop({
-        length : manifestLen,
-        functionToLoop : function(loop, i) {
-          var manifest = schema[i].split("|");
-          insertCollectionTable(db, manifest, function(errInsertCollectionTable) {
-            insertPatientTable(db, manifest, function(errInsertPatientTable) {
-              insertStudyTable(db, manifest, function(errInsertStudyTable) {
-                loop();
-              });
+    db.addCollection("tciaSchema", function() {
+      async.eachSeries(schema, function(manifest, cbManifest){
+        manifest = manifest.split("|");
+        insertCollectionTable(db, manifest, function(errInsertCollectionTable) {
+          insertPatientTable(db, manifest, function(errInsertPatientTable) {
+            insertStudyTable(db, manifest, function(errInsertStudyTable) {
+              cbManifest();
             });
           });
-        },
-        callback : function() {
+        });
+      }, function(errManifest) {
+        if(!errManifest) {
           console.log('TCIA Manifest schema successfully stored');
           cbStoreSchema(null);
-        }    
+        }
+        else {
+          cbStoreSchema(errManifest);
+        }
       });
     });
   }, function(err) {
@@ -281,7 +274,7 @@ var storeSchema = function(schema, cbStoreSchema) {
 
 module.exports.storeSchema = storeSchema;
 
-},{"minimongo":4}],3:[function(require,module,exports){
+},{"async":3,"minimongo":4}],3:[function(require,module,exports){
 (function (process,global){
 /*!
  * async
@@ -33175,7 +33168,7 @@ var updateFileDB = function(db, headerName, seriesUIDShort, downloadFlag, cbUpda
   db.tciaSchema.findOne({'seriesUIDShort': seriesUIDShort}, {}, function(doc) {
     updateFilesArray(doc.files, headerName, downloadFlag, function(files){
       db.tciaSchema.upsert({
-        '_id': doc.seriesUIDShort,
+        '_id': doc._id,
         'type': doc.type,
         'seriesUID': doc.seriesUID,
         'seriesUIDShort': doc.seriesUIDShort,
@@ -33194,6 +33187,9 @@ var updateFileDB = function(db, headerName, seriesUIDShort, downloadFlag, cbUpda
  */
 var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchAndParseTar){
   var url = parseURL(href);
+  var chunkDownload = 0,
+  totalLength = $('#displaySchema').DataTable().cell( $('#row_' + seriesUIDShort)[0], 4).data();
+  console.log("totalLength " + totalLength);
   var options = {
     protocol: url.protocol,
     host: url.host,
@@ -33208,6 +33204,13 @@ var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchA
 
     res.on('data', function (chunk) {
       // Transforming the 'arraybuffer' to 'Buffer' for compatibility with the Stream API
+      chunkDownload += chunk.length;
+      console.log("chunkDownload  " + chunkDownload);
+      var updateLength = Math.round((chunkDownload*1.0)/1024/1024/totalLength*100);
+      if(updateLength > 100)
+        updateLength = 100;
+      console.log("updateLength " + updateLength);
+      $('#displaySchema').DataTable().cell( $('#row_' + seriesUIDShort)[0], 6).data(updateLength+"%").draw();
       tarParser.write(new Buffer(chunk));
     });
 
@@ -33223,6 +33226,7 @@ var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchA
       var downloadFlag = false;
       console.log("File found " + header.name + " of size ~" +
           Math.round(header.size/1024) + " KB");
+
       updateFileDB(db, header.name, seriesUIDShort, downloadFlag, function(){
         var buffer = [];
         stream.on('data', function(data){
@@ -33273,6 +33277,7 @@ var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchA
 
     .on('finish', function(){
       console.log("Tar files processed successfully");
+      chunkDownload = 0;
       cbFetchAndParseTar(null);
     });
   });
@@ -33292,21 +33297,28 @@ var initDownloadMgr = function(jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, 
   new IndexedDb({namespace: "mydb"}, function(db) {
     db.addCollection("tciaSchema", function() {      
       db.tciaSchema.find({'type': "seriesDetails"}).fetch(function(result) {
-        async.eachSeries(result, function(item, callbackItem){
+        async.eachLimit(result, 3, function(item, callbackItem){
           var href = encodeURI('https://public.cancerimagingarchive.net/nbia-download/servlet/DownloadServlet?userId='
               + jnlpUserId + '&includeAnnotation=' + jnlpIncludeAnnotation +
               '&hasAnnotation=' + item.hasAnnotation + '&seriesUid=' +
               item.seriesUID + '&sopUids=');
-          console.log(href);          
+          console.log(href);
+          $('#displaySchema').DataTable().cell( $('#row_' + item.seriesUIDShort)[0], 7).data('Downloading').draw();
           fetchAndParseTar(db, item.seriesUIDShort, href, jnlpPassword, function(errFetchAndParseTar) {
-            if(!errFetchAndParseTar) callbackItem();
-            else callbackItem(errFetchAndParseTar);
+            if(!errFetchAndParseTar) {
+              $('#displaySchema').DataTable().cell( $('#row_' + item.seriesUIDShort)[0], 7).data('Complete').draw();
+              callbackItem();
+            }
+            else {
+              $('#displaySchema').DataTable().cell( $('#row_' + item.seriesUIDShort)[0], 7).data('Error').draw();
+              callbackItem(errFetchAndParseTar);
+            }
           });
         }, function(errSeriesProcess){
-          console.log("All series downloaded successfully");
+          console.log("All series downloaded successfully")
           db.removeCollection("tciaSchema", function(){
             if(!errSeriesProcess) cbInitFunction(null);
-            else cbInitFunction(err);
+            else cbInitFunction(errSeriesProcess);
           });
         });
       });

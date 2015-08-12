@@ -81,17 +81,22 @@ var insertPatientTable = function(db, manifest, cbInsertPatientTable) {
   });
 }
 
-var insertSeriesTable = function(db, seriesUID, hasAnnotation, cbInsertSeriesTable) {
+var insertSeriesTable = function(db, seriesUID, manifest, cbInsertSeriesTable) {
   db.tciaSchema.findOne({'seriesUID': seriesUID}, {}, function(seriesExist) {
     if(!seriesExist) {
-      var seriesUIDShort = seriesUID.slice(-8);
+      var seriesUIDShort = seriesUID.slice(-8),
+      hasAnnotation = manifest[4],
+      numberDCM = manifest[5],
+      size = Math.round((((parseInt(manifest[6]) + parseInt(manifest[7]))*1.0)/1024/1024)*100)/100;
       var hasAnnotationBool = (hasAnnotation == "Yes" ? "true" : "false");
       db.tciaSchema.upsert({
         '_id': seriesUID,
         'type': "seriesDetails",
         'seriesUID': seriesUID,
         'seriesUIDShort': seriesUIDShort,
-        'hasAnnotation': hasAnnotationBool
+        'hasAnnotation': hasAnnotationBool,
+        'numberDCM': numberDCM,
+        'size': size
       }, function() {
           cbInsertSeriesTable(null);
       });
@@ -100,7 +105,7 @@ var insertSeriesTable = function(db, seriesUID, hasAnnotation, cbInsertSeriesTab
   });
 }
 
-var addSeriesUID = function(db, studyUID, seriesUID, hasAnnotation, cbAddSeriesUID) {
+var addSeriesUID = function(db, studyUID, seriesUID, manifest, cbAddSeriesUID) {
   db.tciaSchema.findOne({'studyUID': studyUID}, {}, function(doc) {
     var series = doc.series.concat([seriesUID.slice(-8)]);
     db.tciaSchema.upsert({
@@ -108,7 +113,7 @@ var addSeriesUID = function(db, studyUID, seriesUID, hasAnnotation, cbAddSeriesU
       'studyUID': studyUID,
       'series': series
     }, function() {
-      insertSeriesTable(db, seriesUID, hasAnnotation, function(errInsertSeriesTable) {
+      insertSeriesTable(db, seriesUID, manifest, function(errInsertSeriesTable) {
         cbAddSeriesUID(null);
       });
     });
@@ -117,8 +122,7 @@ var addSeriesUID = function(db, studyUID, seriesUID, hasAnnotation, cbAddSeriesU
 
 var insertStudyTable = function(db, manifest, cbInsertStudyTable) {
   var studyUID = manifest[2].slice(-8),
-  seriesUID = manifest[3],
-  hasAnnotation = manifest[4];
+  seriesUID = manifest[3];
 
   db.tciaSchema.findOne({'studyUID': studyUID}, {}, function(studyExist) {
     if(!studyExist) {
@@ -127,13 +131,13 @@ var insertStudyTable = function(db, manifest, cbInsertStudyTable) {
         'studyUID': studyUID,
         'series': []
       }, function() {
-        addSeriesUID(db, studyUID, seriesUID, hasAnnotation, function(db) {
+        addSeriesUID(db, studyUID, seriesUID, manifest, function(db) {
           cbInsertStudyTable(null);
         });
       });
     }
     else if (studyExist.series.indexOf(seriesUID) == -1) {
-      addSeriesUID(db, studyUID, seriesUID, hasAnnotation, function(db) {
+      addSeriesUID(db, studyUID, seriesUID, manifest, function(db) {
         cbInsertStudyTable(null);
       });
     }

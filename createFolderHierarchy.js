@@ -13,6 +13,8 @@ var createSeriesFolder = function(db, entry, series, cbCreateSeriesFolder) {
           'seriesUID': doc.seriesUID,
           'seriesUIDShort': doc.seriesUIDShort,
           'hasAnnotation': doc.hasAnnotation,
+          'numberDCM': doc.numberDCM,
+          'size': doc.size,
           'fsPath': chrome.fileSystem.retainEntry(entry),
           'files': []
         }, function() {
