@@ -33188,7 +33188,7 @@ var updateFileDB = function(db, headerName, seriesUIDShort, downloadFlag, cbUpda
 var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchAndParseTar){
   var url = parseURL(href);
   var chunkDownload = 0,
-  totalLength = $('#displaySchema').DataTable().cell( $('#row_' + seriesUIDShort)[0], 4).data();
+  totalLength = dTable.cell(dTable.row("[id='row_" + seriesUIDShort + "']").node(), 4).data();
   console.log("totalLength " + totalLength);
   var options = {
     protocol: url.protocol,
@@ -33210,7 +33210,7 @@ var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchA
       if(updateLength > 100)
         updateLength = 100;
       console.log("updateLength " + updateLength);
-      $('#displaySchema').DataTable().cell( $('#row_' + seriesUIDShort)[0], 6).data(updateLength+"%").draw();
+      dTable.cell(dTable.row("[id='row_" + seriesUIDShort + "']").node(), 6).data(updateLength+"%").draw();
       tarParser.write(new Buffer(chunk));
     });
 
@@ -33302,20 +33302,21 @@ var initDownloadMgr = function(jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, 
               + jnlpUserId + '&includeAnnotation=' + jnlpIncludeAnnotation +
               '&hasAnnotation=' + item.hasAnnotation + '&seriesUid=' +
               item.seriesUID + '&sopUids=');
-          console.log(href);
-          $('#displaySchema').DataTable().cell( $('#row_' + item.seriesUIDShort)[0], 7).data('Downloading').draw();
+          console.log(href)
+          dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Downloading').draw();
           fetchAndParseTar(db, item.seriesUIDShort, href, jnlpPassword, function(errFetchAndParseTar) {
             if(!errFetchAndParseTar) {
-              $('#displaySchema').DataTable().cell( $('#row_' + item.seriesUIDShort)[0], 7).data('Complete').draw();
+              dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Complete').draw();
               callbackItem();
             }
             else {
-              $('#displaySchema').DataTable().cell( $('#row_' + item.seriesUIDShort)[0], 7).data('Error').draw();
+              dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Error').draw();
+              //ToDo push series with {downloadFlag: false} again for download
               callbackItem(errFetchAndParseTar);
             }
           });
         }, function(errSeriesProcess){
-          console.log("All series downloaded successfully")
+          console.log("All series encountered successfully")
           db.removeCollection("tciaSchema", function(){
             if(!errSeriesProcess) cbInitFunction(null);
             else cbInitFunction(errSeriesProcess);

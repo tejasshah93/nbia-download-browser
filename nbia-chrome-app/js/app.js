@@ -106,6 +106,7 @@ saveFileButton.addEventListener('click', function(e) {
     bundle.createFolderHierarchy(saveChooseDirEntry, function() {
       console.log("Folder hierarchy created successfully");
       output.innerHTML = "Download started ...";
+      // ToDO helper function initDownloadMgr to download failed series
       bundle.initDownloadMgr(jnlpUserId, jnlpPassword,
           jnlpIncludeAnnotation, function(errInitFunction) {
             if (!errInitFunction) {
@@ -129,7 +130,7 @@ saveFileButton.addEventListener('click', function(e) {
 $(document).ready(function() {
   console.log("Chrome Application loaded. Request JNLP URL");
   chrome.runtime.sendMessage({appLoad: "true"}, function(response) {});
-  $('#displaySchema').DataTable({
+  dTable = $('#displaySchema').DataTable({
     "scrollY": "400px",
     "scrollCollapse": true,
     "lengthMenu": [[10, 25, 50, -1], [10, 25, 50, "All"]],
