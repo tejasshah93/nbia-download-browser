@@ -2,12 +2,14 @@
 // Required Node Packages
 var async = require('async');
 var minimongo = require("minimongo");
+
 var IndexedDb = minimongo.IndexedDb;
 
 var createSeriesFolder = function(db, entry, series, cbCreateSeriesFolder) {
   async.each(series, function(seriesItem, cbSeries) {
     db.tciaSchema.findOne({'seriesUIDShort': seriesItem}, {}, function(doc) {
-      entry.getDirectory(doc.seriesUIDShort, {create:true}, function(entry) {
+      var seriesDirname = (seriesItem[0] == "." ? seriesItem.slice(-7) : seriesItem);
+      entry.getDirectory(seriesDirname, {create:true}, function(entry) {
         db.tciaSchema.upsert({
           '_id': doc._id,
           'type': doc.type,
@@ -17,6 +19,7 @@ var createSeriesFolder = function(db, entry, series, cbCreateSeriesFolder) {
           'numberDCM': doc.numberDCM,
           'size': doc.size,
           'fsPath': chrome.fileSystem.retainEntry(entry),
+          'downloadFlag': false,
           'files': []
         }, function() {
           cbSeries();
@@ -30,12 +33,13 @@ var createSeriesFolder = function(db, entry, series, cbCreateSeriesFolder) {
 
 var createStudiesFolder = function(db, entry, studies, cbCreateStudiesFolder) {
   async.each(studies, function(study, cbStudy) {
-    entry.getDirectory(study, {create:true}, function(entry) {
-        db.tciaSchema.findOne({'studyUID': study}, {}, function(doc) {
-          createSeriesFolder(db, entry, doc.series, function(){
-            cbStudy();
-          });
+    var studyDirname = (study[0] == "." ? study.slice(-7) : study);
+    entry.getDirectory(studyDirname, {create:true}, function(entry) {
+      db.tciaSchema.findOne({'studyUID': study}, {}, function(doc) {
+        createSeriesFolder(db, entry, doc.series, function(){
+          cbStudy();
         });
+      });
     });
   }, function(errStudy) {
     if(!errStudy)  cbCreateStudiesFolder();
@@ -77,11 +81,16 @@ var createFolderHierarchy = function(theEntry, cbCreateFolderHierarchy) {
     db.addCollection("tciaSchema", function() {
       db.tciaSchema.upsert({
         '_id': "chosenDir",
-        'chosenDirFolder': chrome.fileSystem.retainEntry(theEntry)
+        'chosenDirFolder': chrome.fileSystem.retainEntry(theEntry),
       }, function() {
         db.tciaSchema.find({'type': "collection"}).fetch(function(collections) {
           createCollectionsFolder(db, theEntry, collections, function(){
-            cbCreateFolderHierarchy();
+            db.tciaSchema.upsert({
+              '_id': "createFolderHierarchyInfo",
+              'createFolderHierarchyFlag': true
+            }, function() {
+              cbCreateFolderHierarchy();
+            });
           });
         });
       });
@@ -94,10 +103,148 @@ var createFolderHierarchy = function(theEntry, cbCreateFolderHierarchy) {
 
 module.exports.createFolderHierarchy = createFolderHierarchy;
 
-},{"async":3,"minimongo":4}],2:[function(require,module,exports){
+},{"async":6,"minimongo":7}],2:[function(require,module,exports){
+// Required Node Packages
+var async = require('async');
+
+var execute = function(restoreStateSchema, restoreStateFolder, saveChooseDirEntry, cbExecute) {
+  async.series({
+    storeSchema: function(callback) {
+      console.log("execute.storeSchema ..");
+      if(!restoreStateSchema) {
+        console.log("Saving Manifest Schema ..");
+        output.innerHTML = "Initializing database ... (May take upto 5 minutes for huge downloads)";
+        bundle.storeSchema(manifestSchema, function(errStoreSchema) {
+          callback(errStoreSchema, null);
+        });
+      }
+      else {
+        callback(null, null);
+      }
+    },
+    createFolderHierarchy: function(callback) {
+      console.log("execute.createFolderHierarchy ..");
+      if(!restoreStateFolder) {
+        console.log("Creating Folder hierarchy ...");
+        if(restoreStateSchema) {
+          output.innerHTML = "Database initialized already. Creating folders ...";
+        }
+        else if(!restoreStateSchema) {
+          output.innerHTML = "Creating folders ...";
+        }
+        bundle.createFolderHierarchy(saveChooseDirEntry, function() {
+          console.log("Folder hierarchy created successfully");
+          callback(null, null);
+        });
+      }    
+      else {
+        callback(null, null);
+      }
+    },
+    initDownloadMgr: function(callback) {
+      console.log("execute.initDownloadMgr ..");
+      if(!restoreStateSchema && !restoreStateFolder) {
+        output.innerHTML = "Download started ...";
+      }
+      bundle.initDownloadMgr(jnlpUserId, jnlpPassword, jnlpIncludeAnnotation,
+          function(errInitFunction) {
+            if (!errInitFunction) {
+              callback(errInitFunction, null);
+            }
+          });
+    }
+  },
+  function(err, results) {
+    cbExecute(err);
+  });
+}
+
+module.exports.execute = execute;
+
+},{"async":6}],3:[function(require,module,exports){
+// Required Node Packages
+var minimongo = require('minimongo');
+
+var IndexedDb = minimongo.IndexedDb;
+
+var fetchJnlp = function(jnlpURL, cbFetchJnlp) {
+  new IndexedDb({namespace: "mydb"}, function(db) {
+    db.addCollection("tciaSchema", function() {
+      if(jnlpURL) {
+        db.tciaSchema.upsert({
+          '_id': "jnlpInfo",
+          'jnlpURL': jnlpURL
+        }, function() {
+          cbFetchJnlp(null, jnlpURL);
+        });
+      }
+      else {
+        db.tciaSchema.findOne({'_id': "jnlpInfo"}, {}, function(jnlpExist) {
+          if(jnlpExist) {
+            cbFetchJnlp(null, jnlpExist.jnlpURL);
+          }
+          else {
+            cbFetchJnlp("Error", null);
+          }
+        });
+      }
+    });
+  }, function(err) {
+    console.log(err);
+  });
+}
+
+module.exports.fetchJnlp = fetchJnlp;
+
+},{"minimongo":7}],4:[function(require,module,exports){
 // Required Node Packages
 var async = require('async');
 var minimongo = require('minimongo');
+
+var IndexedDb = minimongo.IndexedDb;
+
+var restoreState = function(cbRestoreState) {
+  new IndexedDb({namespace: "mydb"}, function(db) {
+    db.addCollection("tciaSchema", function() {
+      async.parallel({
+        storeSchemaFlag: function(callback) {
+          db.tciaSchema.findOne({'_id': "storeSchemaInfo"}, {}, function(schemaExist) {
+            if(!schemaExist) {
+              callback(null, 0);
+            }
+            else {
+              callback(null, 1);
+            }
+          });
+        },
+        createFolderHierarchyFlag: function(callback) {
+          db.tciaSchema.findOne({'_id': "createFolderHierarchyInfo"}, {}, function(folderHierarchyExist) {
+            if(!folderHierarchyExist) {              
+              callback(null, 0);
+            }
+            else {
+              callback(null, 1);
+            }
+          });
+        }
+      },
+      function(err, results) {
+        // results: {storeSchemaFlag: 0/1, createFolderHierarchyFlag: 0/1}
+        cbRestoreState(results);
+      });
+    }, function(err) {
+      console.log(err);
+    });
+  });
+}
+
+module.exports.restoreState = restoreState;
+
+},{"async":6,"minimongo":7}],5:[function(require,module,exports){
+// Required Node Packages
+var async = require('async');
+var minimongo = require('minimongo');
+
 var IndexedDb = minimongo.IndexedDb;
 
 var addPatientID = function(db, collection, patientID, cbAddPatientID) {
@@ -258,8 +405,13 @@ var storeSchema = function(schema, cbStoreSchema) {
         });
       }, function(errManifest) {
         if(!errManifest) {
-          console.log('TCIA Manifest schema successfully stored');
-          cbStoreSchema(null);
+          db.tciaSchema.upsert({
+            '_id': "storeSchemaInfo",
+            'storeSchemaFlag': true
+          }, function() {
+            console.log('TCIA Manifest schema successfully stored');
+            cbStoreSchema(null);
+          });
         }
         else {
           cbStoreSchema(errManifest);
@@ -274,7 +426,7 @@ var storeSchema = function(schema, cbStoreSchema) {
 
 module.exports.storeSchema = storeSchema;
 
-},{"async":3,"minimongo":4}],3:[function(require,module,exports){
+},{"async":6,"minimongo":7}],6:[function(require,module,exports){
 (function (process,global){
 /*!
  * async
@@ -1465,7 +1617,7 @@ module.exports.storeSchema = storeSchema;
 }());
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"_process":53}],4:[function(require,module,exports){
+},{"_process":56}],7:[function(require,module,exports){
 exports.MemoryDb = require('./lib/MemoryDb');
 exports.LocalStorageDb = require('./lib/LocalStorageDb');
 exports.IndexedDb = require('./lib/IndexedDb');
@@ -1474,7 +1626,7 @@ exports.RemoteDb = require('./lib/RemoteDb');
 exports.HybridDb = require('./lib/HybridDb');
 exports.utils = require('./lib/utils');
 
-},{"./lib/HybridDb":6,"./lib/IndexedDb":7,"./lib/LocalStorageDb":8,"./lib/MemoryDb":9,"./lib/RemoteDb":10,"./lib/WebSQLDb":11,"./lib/utils":14}],5:[function(require,module,exports){
+},{"./lib/HybridDb":9,"./lib/IndexedDb":10,"./lib/LocalStorageDb":11,"./lib/MemoryDb":12,"./lib/RemoteDb":13,"./lib/WebSQLDb":14,"./lib/utils":17}],8:[function(require,module,exports){
 var _ = require('lodash');
 
 EJSON = {}; // Global!
@@ -1802,7 +1954,7 @@ EJSON.clone = function (v) {
 
 module.exports = EJSON;
 
-},{"lodash":19}],6:[function(require,module,exports){
+},{"lodash":22}],9:[function(require,module,exports){
 
 /*
 
@@ -2117,7 +2269,7 @@ HybridCollection = (function() {
 
 })();
 
-},{"./utils":14,"lodash":19}],7:[function(require,module,exports){
+},{"./utils":17,"lodash":22}],10:[function(require,module,exports){
 var Collection, IDBStore, IndexedDb, async, compileSort, processFind, utils, _;
 
 _ = require('lodash');
@@ -2551,7 +2703,7 @@ Collection = (function() {
 
 })();
 
-},{"./selector":13,"./utils":14,"async":15,"idb-wrapper":17,"lodash":19}],8:[function(require,module,exports){
+},{"./selector":16,"./utils":17,"async":18,"idb-wrapper":20,"lodash":22}],11:[function(require,module,exports){
 var Collection, LocalStorageDb, compileSort, processFind, utils, _;
 
 _ = require('lodash');
@@ -2843,7 +2995,7 @@ Collection = (function() {
 
 })();
 
-},{"./selector":13,"./utils":14,"lodash":19}],9:[function(require,module,exports){
+},{"./selector":16,"./utils":17,"lodash":22}],12:[function(require,module,exports){
 var Collection, MemoryDb, compileSort, processFind, utils, _;
 
 _ = require('lodash');
@@ -3046,7 +3198,7 @@ Collection = (function() {
 
 })();
 
-},{"./selector":13,"./utils":14,"lodash":19}],10:[function(require,module,exports){
+},{"./selector":16,"./utils":17,"lodash":22}],13:[function(require,module,exports){
 var $, Collection, RemoteDb, async, jQueryHttpClient, utils, _;
 
 _ = require('lodash');
@@ -3242,7 +3394,7 @@ Collection = (function() {
 
 })();
 
-},{"./jQueryHttpClient":12,"./utils":14,"async":15,"jquery":18,"lodash":19}],11:[function(require,module,exports){
+},{"./jQueryHttpClient":15,"./utils":17,"async":18,"jquery":21,"lodash":22}],14:[function(require,module,exports){
 var Collection, WebSQLDb, async, compileSort, doNothing, processFind, utils, _;
 
 _ = require('lodash');
@@ -3657,7 +3809,7 @@ Collection = (function() {
 
 })();
 
-},{"./selector":13,"./utils":14,"async":15,"lodash":19}],12:[function(require,module,exports){
+},{"./selector":16,"./utils":17,"async":18,"lodash":22}],15:[function(require,module,exports){
 module.exports = function(method, url, params, data, success, error) {
   var fullUrl, req;
   fullUrl = url + "?" + $.param(params);
@@ -3687,7 +3839,7 @@ module.exports = function(method, url, params, data, success, error) {
   });
 };
 
-},{}],13:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 /*
 ========================================
 Meteor is licensed under the MIT License
@@ -4424,7 +4576,7 @@ LocalCollection._compileSort = function (spec) {
 exports.compileDocumentSelector = compileDocumentSelector;
 exports.compileSort = LocalCollection._compileSort;
 
-},{"./EJSON":5,"lodash":19}],14:[function(require,module,exports){
+},{"./EJSON":8,"lodash":22}],17:[function(require,module,exports){
 var async, bowser, compileDocumentSelector, compileSort, deg2rad, getDistanceFromLatLngInM, isLocalStorageSupported, pointInPolygon, processGeoIntersectsOperator, processNearOperator, _;
 
 _ = require('lodash');
@@ -4726,7 +4878,7 @@ exports.regularizeUpsert = function(docs, bases, success, error) {
   return [items, success, error];
 };
 
-},{"./HybridDb":6,"./IndexedDb":7,"./LocalStorageDb":8,"./MemoryDb":9,"./WebSQLDb":11,"./selector":13,"async":15,"bowser":16,"lodash":19}],15:[function(require,module,exports){
+},{"./HybridDb":9,"./IndexedDb":10,"./LocalStorageDb":11,"./MemoryDb":12,"./WebSQLDb":14,"./selector":16,"async":18,"bowser":19,"lodash":22}],18:[function(require,module,exports){
 (function (process){
 /*!
  * async
@@ -5788,7 +5940,7 @@ exports.regularizeUpsert = function(docs, bases, success, error) {
 }());
 
 }).call(this,require('_process'))
-},{"_process":53}],16:[function(require,module,exports){
+},{"_process":56}],19:[function(require,module,exports){
 /*!
   * Bowser - a browser detector
   * https://github.com/ded/bowser
@@ -6066,7 +6218,7 @@ exports.regularizeUpsert = function(docs, bases, success, error) {
   return bowser
 });
 
-},{}],17:[function(require,module,exports){
+},{}],20:[function(require,module,exports){
 /*global window:false, self:false, define:false, module:false */
 
 /**
@@ -7413,7 +7565,7 @@ exports.regularizeUpsert = function(docs, bases, success, error) {
 
 }, this);
 
-},{}],18:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
 /*!
  * jQuery JavaScript Library v2.1.4
  * http://jquery.com/
@@ -16625,7 +16777,7 @@ return jQuery;
 
 }));
 
-},{}],19:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
 (function (global){
 /**
  * @license
@@ -23415,7 +23567,7 @@ return jQuery;
 }.call(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],20:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
 var util = require('util')
 var bl = require('bl')
 var xtend = require('xtend')
@@ -23662,7 +23814,7 @@ Extract.prototype._write = function(data, enc, cb) {
 
 module.exports = Extract
 
-},{"./headers":21,"bl":23,"readable-stream":37,"util":73,"xtend":38}],21:[function(require,module,exports){
+},{"./headers":24,"bl":26,"readable-stream":40,"util":76,"xtend":41}],24:[function(require,module,exports){
 (function (Buffer){
 var ZEROS = '0000000000000000000'
 var ZERO_OFFSET = '0'.charCodeAt(0)
@@ -23898,10 +24050,10 @@ exports.decode = function(buf) {
 }
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":41}],22:[function(require,module,exports){
+},{"buffer":44}],25:[function(require,module,exports){
 exports.extract = require('./extract')
 exports.pack = require('./pack')
-},{"./extract":20,"./pack":39}],23:[function(require,module,exports){
+},{"./extract":23,"./pack":42}],26:[function(require,module,exports){
 (function (Buffer){
 var DuplexStream = require('readable-stream/duplex')
   , util         = require('util')
@@ -24121,7 +24273,7 @@ BufferList.prototype.destroy = function () {
 module.exports = BufferList
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":41,"readable-stream/duplex":27,"util":73}],24:[function(require,module,exports){
+},{"buffer":44,"readable-stream/duplex":30,"util":76}],27:[function(require,module,exports){
 var once = require('once');
 
 var noop = function() {};
@@ -24205,7 +24357,7 @@ var eos = function(stream, opts, callback) {
 };
 
 module.exports = eos;
-},{"once":26}],25:[function(require,module,exports){
+},{"once":29}],28:[function(require,module,exports){
 // Returns a wrapper function that returns a wrapped callback
 // The wrapper function should do some stuff, and return a
 // presumably different callback function.
@@ -24240,7 +24392,7 @@ function wrappy (fn, cb) {
   }
 }
 
-},{}],26:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 var wrappy = require('wrappy')
 module.exports = wrappy(once)
 
@@ -24263,10 +24415,10 @@ function once (fn) {
   return f
 }
 
-},{"wrappy":25}],27:[function(require,module,exports){
+},{"wrappy":28}],30:[function(require,module,exports){
 module.exports = require("./lib/_stream_duplex.js")
 
-},{"./lib/_stream_duplex.js":28}],28:[function(require,module,exports){
+},{"./lib/_stream_duplex.js":31}],31:[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -24359,7 +24511,7 @@ function forEach (xs, f) {
 }
 
 }).call(this,require('_process'))
-},{"./_stream_readable":30,"./_stream_writable":32,"_process":53,"core-util-is":33,"inherits":34}],29:[function(require,module,exports){
+},{"./_stream_readable":33,"./_stream_writable":35,"_process":56,"core-util-is":36,"inherits":37}],32:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -24407,7 +24559,7 @@ PassThrough.prototype._transform = function(chunk, encoding, cb) {
   cb(null, chunk);
 };
 
-},{"./_stream_transform":31,"core-util-is":33,"inherits":34}],30:[function(require,module,exports){
+},{"./_stream_transform":34,"core-util-is":36,"inherits":37}],33:[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -25393,7 +25545,7 @@ function indexOf (xs, x) {
 }
 
 }).call(this,require('_process'))
-},{"_process":53,"buffer":41,"core-util-is":33,"events":45,"inherits":34,"isarray":35,"stream":69,"string_decoder/":36}],31:[function(require,module,exports){
+},{"_process":56,"buffer":44,"core-util-is":36,"events":48,"inherits":37,"isarray":38,"stream":72,"string_decoder/":39}],34:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -25605,7 +25757,7 @@ function done(stream, er) {
   return stream.push(null);
 }
 
-},{"./_stream_duplex":28,"core-util-is":33,"inherits":34}],32:[function(require,module,exports){
+},{"./_stream_duplex":31,"core-util-is":36,"inherits":37}],35:[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -25995,7 +26147,7 @@ function endWritable(stream, state, cb) {
 }
 
 }).call(this,require('_process'))
-},{"./_stream_duplex":28,"_process":53,"buffer":41,"core-util-is":33,"inherits":34,"stream":69}],33:[function(require,module,exports){
+},{"./_stream_duplex":31,"_process":56,"buffer":44,"core-util-is":36,"inherits":37,"stream":72}],36:[function(require,module,exports){
 (function (Buffer){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -26105,7 +26257,7 @@ function objectToString(o) {
   return Object.prototype.toString.call(o);
 }
 }).call(this,require("buffer").Buffer)
-},{"buffer":41}],34:[function(require,module,exports){
+},{"buffer":44}],37:[function(require,module,exports){
 if (typeof Object.create === 'function') {
   // implementation from standard node.js 'util' module
   module.exports = function inherits(ctor, superCtor) {
@@ -26130,12 +26282,12 @@ if (typeof Object.create === 'function') {
   }
 }
 
-},{}],35:[function(require,module,exports){
+},{}],38:[function(require,module,exports){
 module.exports = Array.isArray || function (arr) {
   return Object.prototype.toString.call(arr) == '[object Array]';
 };
 
-},{}],36:[function(require,module,exports){
+},{}],39:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -26358,7 +26510,7 @@ function base64DetectIncompleteChar(buffer) {
   this.charLength = this.charReceived ? 3 : 0;
 }
 
-},{"buffer":41}],37:[function(require,module,exports){
+},{"buffer":44}],40:[function(require,module,exports){
 var Stream = require('stream'); // hack to fix a circular dependency issue when used with browserify
 exports = module.exports = require('./lib/_stream_readable.js');
 exports.Stream = Stream;
@@ -26368,7 +26520,7 @@ exports.Duplex = require('./lib/_stream_duplex.js');
 exports.Transform = require('./lib/_stream_transform.js');
 exports.PassThrough = require('./lib/_stream_passthrough.js');
 
-},{"./lib/_stream_duplex.js":28,"./lib/_stream_passthrough.js":29,"./lib/_stream_readable.js":30,"./lib/_stream_transform.js":31,"./lib/_stream_writable.js":32,"stream":69}],38:[function(require,module,exports){
+},{"./lib/_stream_duplex.js":31,"./lib/_stream_passthrough.js":32,"./lib/_stream_readable.js":33,"./lib/_stream_transform.js":34,"./lib/_stream_writable.js":35,"stream":72}],41:[function(require,module,exports){
 module.exports = extend
 
 function extend() {
@@ -26387,7 +26539,7 @@ function extend() {
     return target
 }
 
-},{}],39:[function(require,module,exports){
+},{}],42:[function(require,module,exports){
 (function (process,Buffer){
 var util = require('util')
 var eos = require('end-of-stream')
@@ -26585,9 +26737,9 @@ Pack.prototype._read = function(n) {
 module.exports = Pack
 
 }).call(this,require('_process'),require("buffer").Buffer)
-},{"./headers":21,"_process":53,"buffer":41,"end-of-stream":24,"readable-stream":37,"util":73}],40:[function(require,module,exports){
+},{"./headers":24,"_process":56,"buffer":44,"end-of-stream":27,"readable-stream":40,"util":76}],43:[function(require,module,exports){
 
-},{}],41:[function(require,module,exports){
+},{}],44:[function(require,module,exports){
 /*!
  * The buffer module from node.js, for the browser.
  *
@@ -28003,7 +28155,7 @@ function decodeUtf8Char (str) {
   }
 }
 
-},{"base64-js":42,"ieee754":43,"is-array":44}],42:[function(require,module,exports){
+},{"base64-js":45,"ieee754":46,"is-array":47}],45:[function(require,module,exports){
 var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 ;(function (exports) {
@@ -28129,7 +28281,7 @@ var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 	exports.fromByteArray = uint8ToBase64
 }(typeof exports === 'undefined' ? (this.base64js = {}) : exports))
 
-},{}],43:[function(require,module,exports){
+},{}],46:[function(require,module,exports){
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m,
       eLen = nBytes * 8 - mLen - 1,
@@ -28215,7 +28367,7 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-},{}],44:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 
 /**
  * isArray
@@ -28250,7 +28402,7 @@ module.exports = isArray || function (val) {
   return !! val && '[object Array]' == str.call(val);
 };
 
-},{}],45:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -28553,7 +28705,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],46:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 var http = module.exports;
 var EventEmitter = require('events').EventEmitter;
 var Request = require('./lib/request');
@@ -28699,7 +28851,7 @@ http.STATUS_CODES = {
     510 : 'Not Extended',               // RFC 2774
     511 : 'Network Authentication Required' // RFC 6585
 };
-},{"./lib/request":47,"events":45,"url":71}],47:[function(require,module,exports){
+},{"./lib/request":50,"events":48,"url":74}],50:[function(require,module,exports){
 var Stream = require('stream');
 var Response = require('./response');
 var Base64 = require('Base64');
@@ -28910,7 +29062,7 @@ var isXHR2Compatible = function (obj) {
     if (typeof FormData !== 'undefined' && obj instanceof FormData) return true;
 };
 
-},{"./response":48,"Base64":49,"inherits":51,"stream":69}],48:[function(require,module,exports){
+},{"./response":51,"Base64":52,"inherits":54,"stream":72}],51:[function(require,module,exports){
 var Stream = require('stream');
 var util = require('util');
 
@@ -29032,7 +29184,7 @@ var isArray = Array.isArray || function (xs) {
     return Object.prototype.toString.call(xs) === '[object Array]';
 };
 
-},{"stream":69,"util":73}],49:[function(require,module,exports){
+},{"stream":72,"util":76}],52:[function(require,module,exports){
 ;(function () {
 
   var object = typeof exports != 'undefined' ? exports : this; // #8: web workers
@@ -29094,7 +29246,7 @@ var isArray = Array.isArray || function (xs) {
 
 }());
 
-},{}],50:[function(require,module,exports){
+},{}],53:[function(require,module,exports){
 var http = require('http');
 
 var https = module.exports;
@@ -29109,11 +29261,11 @@ https.request = function (params, cb) {
     return http.request.call(this, params, cb);
 }
 
-},{"http":46}],51:[function(require,module,exports){
-arguments[4][34][0].apply(exports,arguments)
-},{"dup":34}],52:[function(require,module,exports){
-arguments[4][35][0].apply(exports,arguments)
-},{"dup":35}],53:[function(require,module,exports){
+},{"http":49}],54:[function(require,module,exports){
+arguments[4][37][0].apply(exports,arguments)
+},{"dup":37}],55:[function(require,module,exports){
+arguments[4][38][0].apply(exports,arguments)
+},{"dup":38}],56:[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -29205,7 +29357,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],54:[function(require,module,exports){
+},{}],57:[function(require,module,exports){
 (function (global){
 /*! https://mths.be/punycode v1.3.2 by @mathias */
 ;(function(root) {
@@ -29739,7 +29891,7 @@ process.umask = function() { return 0; };
 }(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],55:[function(require,module,exports){
+},{}],58:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -29825,7 +29977,7 @@ var isArray = Array.isArray || function (xs) {
   return Object.prototype.toString.call(xs) === '[object Array]';
 };
 
-},{}],56:[function(require,module,exports){
+},{}],59:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -29912,19 +30064,19 @@ var objectKeys = Object.keys || function (obj) {
   return res;
 };
 
-},{}],57:[function(require,module,exports){
+},{}],60:[function(require,module,exports){
 'use strict';
 
 exports.decode = exports.parse = require('./decode');
 exports.encode = exports.stringify = require('./encode');
 
-},{"./decode":55,"./encode":56}],58:[function(require,module,exports){
-arguments[4][27][0].apply(exports,arguments)
-},{"./lib/_stream_duplex.js":59,"dup":27}],59:[function(require,module,exports){
-arguments[4][28][0].apply(exports,arguments)
-},{"./_stream_readable":61,"./_stream_writable":63,"_process":53,"core-util-is":64,"dup":28,"inherits":51}],60:[function(require,module,exports){
-arguments[4][29][0].apply(exports,arguments)
-},{"./_stream_transform":62,"core-util-is":64,"dup":29,"inherits":51}],61:[function(require,module,exports){
+},{"./decode":58,"./encode":59}],61:[function(require,module,exports){
+arguments[4][30][0].apply(exports,arguments)
+},{"./lib/_stream_duplex.js":62,"dup":30}],62:[function(require,module,exports){
+arguments[4][31][0].apply(exports,arguments)
+},{"./_stream_readable":64,"./_stream_writable":66,"_process":56,"core-util-is":67,"dup":31,"inherits":54}],63:[function(require,module,exports){
+arguments[4][32][0].apply(exports,arguments)
+},{"./_stream_transform":65,"core-util-is":67,"dup":32,"inherits":54}],64:[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -30879,7 +31031,7 @@ function indexOf (xs, x) {
 }
 
 }).call(this,require('_process'))
-},{"./_stream_duplex":59,"_process":53,"buffer":41,"core-util-is":64,"events":45,"inherits":51,"isarray":52,"stream":69,"string_decoder/":70,"util":40}],62:[function(require,module,exports){
+},{"./_stream_duplex":62,"_process":56,"buffer":44,"core-util-is":67,"events":48,"inherits":54,"isarray":55,"stream":72,"string_decoder/":73,"util":43}],65:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -31090,7 +31242,7 @@ function done(stream, er) {
   return stream.push(null);
 }
 
-},{"./_stream_duplex":59,"core-util-is":64,"inherits":51}],63:[function(require,module,exports){
+},{"./_stream_duplex":62,"core-util-is":67,"inherits":54}],66:[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -31571,12 +31723,12 @@ function endWritable(stream, state, cb) {
 }
 
 }).call(this,require('_process'))
-},{"./_stream_duplex":59,"_process":53,"buffer":41,"core-util-is":64,"inherits":51,"stream":69}],64:[function(require,module,exports){
-arguments[4][33][0].apply(exports,arguments)
-},{"buffer":41,"dup":33}],65:[function(require,module,exports){
+},{"./_stream_duplex":62,"_process":56,"buffer":44,"core-util-is":67,"inherits":54,"stream":72}],67:[function(require,module,exports){
+arguments[4][36][0].apply(exports,arguments)
+},{"buffer":44,"dup":36}],68:[function(require,module,exports){
 module.exports = require("./lib/_stream_passthrough.js")
 
-},{"./lib/_stream_passthrough.js":60}],66:[function(require,module,exports){
+},{"./lib/_stream_passthrough.js":63}],69:[function(require,module,exports){
 exports = module.exports = require('./lib/_stream_readable.js');
 exports.Stream = require('stream');
 exports.Readable = exports;
@@ -31585,13 +31737,13 @@ exports.Duplex = require('./lib/_stream_duplex.js');
 exports.Transform = require('./lib/_stream_transform.js');
 exports.PassThrough = require('./lib/_stream_passthrough.js');
 
-},{"./lib/_stream_duplex.js":59,"./lib/_stream_passthrough.js":60,"./lib/_stream_readable.js":61,"./lib/_stream_transform.js":62,"./lib/_stream_writable.js":63,"stream":69}],67:[function(require,module,exports){
+},{"./lib/_stream_duplex.js":62,"./lib/_stream_passthrough.js":63,"./lib/_stream_readable.js":64,"./lib/_stream_transform.js":65,"./lib/_stream_writable.js":66,"stream":72}],70:[function(require,module,exports){
 module.exports = require("./lib/_stream_transform.js")
 
-},{"./lib/_stream_transform.js":62}],68:[function(require,module,exports){
+},{"./lib/_stream_transform.js":65}],71:[function(require,module,exports){
 module.exports = require("./lib/_stream_writable.js")
 
-},{"./lib/_stream_writable.js":63}],69:[function(require,module,exports){
+},{"./lib/_stream_writable.js":66}],72:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -31720,9 +31872,9 @@ Stream.prototype.pipe = function(dest, options) {
   return dest;
 };
 
-},{"events":45,"inherits":51,"readable-stream/duplex.js":58,"readable-stream/passthrough.js":65,"readable-stream/readable.js":66,"readable-stream/transform.js":67,"readable-stream/writable.js":68}],70:[function(require,module,exports){
-arguments[4][36][0].apply(exports,arguments)
-},{"buffer":41,"dup":36}],71:[function(require,module,exports){
+},{"events":48,"inherits":54,"readable-stream/duplex.js":61,"readable-stream/passthrough.js":68,"readable-stream/readable.js":69,"readable-stream/transform.js":70,"readable-stream/writable.js":71}],73:[function(require,module,exports){
+arguments[4][39][0].apply(exports,arguments)
+},{"buffer":44,"dup":39}],74:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -32431,14 +32583,14 @@ function isNullOrUndefined(arg) {
   return  arg == null;
 }
 
-},{"punycode":54,"querystring":57}],72:[function(require,module,exports){
+},{"punycode":57,"querystring":60}],75:[function(require,module,exports){
 module.exports = function isBuffer(arg) {
   return arg && typeof arg === 'object'
     && typeof arg.copy === 'function'
     && typeof arg.fill === 'function'
     && typeof arg.readUInt8 === 'function';
 }
-},{}],73:[function(require,module,exports){
+},{}],76:[function(require,module,exports){
 (function (process,global){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -33028,21 +33180,25 @@ function hasOwnProperty(obj, prop) {
 }
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./support/isBuffer":72,"_process":53,"inherits":51}],74:[function(require,module,exports){
+},{"./support/isBuffer":75,"_process":56,"inherits":54}],77:[function(require,module,exports){
 (function (Buffer){
 // Required Node Packages
-var http = require('http'),    
+var http = require('http'),
     https = require('https'),
     async = require('async'),
     tar = require('tar-stream'),
     minimongo = require("minimongo");
+
 var IndexedDb = minimongo.IndexedDb;
 
 var events = require('events');
 var eventEmitter = new events.EventEmitter();
 
-var saveManifest = require("./storeSchema");
-var createFS = require("./createFolderHierarchy");
+var executeModule = require("./execute");
+var fetchJnlpModule = require("./fetchJnlp");
+var storeSchemaModule = require("./storeSchema");
+var restoreStateModule = require("./restoreState");
+var createFolderHierarchyModule = require("./createFolderHierarchy");
 
 eventEmitter.on('customErr', function(err) {
   console.log(err);
@@ -33064,7 +33220,7 @@ var parseURL = function(href) {
   }
 }
 
-/* 
+/*
  * Fetches and returns the seriesUID folder location from Chrome local storage
  */
 var getSeriesUIDFolder = function(db, seriesUIDShort, cbGetSeriesUIDFolder) {
@@ -33159,7 +33315,26 @@ var updateFilesArray = function (files, headerName, downloadFlag, cbUpdateFilesA
         })(i);
       }
     }
-} 
+}
+
+var updateDownloadFlag = function(db, seriesUIDShort, downloadFlag, cbUpdateDownloadFlag) {
+  db.tciaSchema.findOne({'seriesUIDShort': seriesUIDShort}, {}, function(doc) {
+    db.tciaSchema.upsert({
+      '_id': doc._id,
+      'type': doc.type,
+      'seriesUID': doc.seriesUID,
+      'seriesUIDShort': doc.seriesUIDShort,
+      'hasAnnotation': doc.hasAnnotation,
+      'numberDCM': doc.numberDCM,
+      'size': doc.size,
+      'fsPath': doc.fsPath,
+      'downloadFlag': downloadFlag,
+      'files': doc.files
+    }, function() {
+      cbUpdateDownloadFlag();
+    });
+  });
+}
 
 /*
  * Upserts the files to the appropriate series document with downloadFlag status
@@ -33173,7 +33348,10 @@ var updateFileDB = function(db, headerName, seriesUIDShort, downloadFlag, cbUpda
         'seriesUID': doc.seriesUID,
         'seriesUIDShort': doc.seriesUIDShort,
         'hasAnnotation': doc.hasAnnotation,
+        'numberDCM': doc.numberDCM,
+        'size': doc.size,
         'fsPath': doc.fsPath,
+        'downloadFlag': doc.downloadFlag,
         'files': files
       }, function() {
         cbUpdateFileDB();
@@ -33250,7 +33428,7 @@ var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchA
                     }
                     else {
                       eventEmitter.emit('customErr', errDownloadFile);
-                      callback();                  
+                      callback();
                     }
                   });
             }
@@ -33290,54 +33468,113 @@ var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchA
   req.end();
 }
 
-/*
- * Creates the DB, Collection if not created and calls the main function
- */
-var initDownloadMgr = function(jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, cbInitFunction){
-  new IndexedDb({namespace: "mydb"}, function(db) {
-    db.addCollection("tciaSchema", function() {      
-      db.tciaSchema.find({'type': "seriesDetails"}).fetch(function(result) {
-        async.eachLimit(result, 3, function(item, callbackItem){
-          var href = encodeURI('https://public.cancerimagingarchive.net/nbia-download/servlet/DownloadServlet?userId='
-              + jnlpUserId + '&includeAnnotation=' + jnlpIncludeAnnotation +
-              '&hasAnnotation=' + item.hasAnnotation + '&seriesUid=' +
-              item.seriesUID + '&sopUids=');
-          console.log(href)
-          dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Downloading').draw();
-          fetchAndParseTar(db, item.seriesUIDShort, href, jnlpPassword, function(errFetchAndParseTar) {
-            if(!errFetchAndParseTar) {
-              dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Complete').draw();
-              callbackItem();
-            }
-            else {
-              dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Error').draw();
-              //ToDo push series with {downloadFlag: false} again for download
-              callbackItem(errFetchAndParseTar);
-            }
-          });
-        }, function(errSeriesProcess){
-          console.log("All series encountered successfully")
-          db.removeCollection("tciaSchema", function(){
-            if(!errSeriesProcess) cbInitFunction(null);
-            else cbInitFunction(errSeriesProcess);
-          });
+var downloadSeries = function(db, result, jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, cbDownloadSeries){
+  async.eachLimit(result, 3, function(item, callbackItem) {
+    var href = encodeURI('https://public.cancerimagingarchive.net/nbia-download/servlet/DownloadServlet?userId='
+        + jnlpUserId + '&includeAnnotation=' + jnlpIncludeAnnotation +
+        '&hasAnnotation=' + item.hasAnnotation + '&seriesUid=' +
+        item.seriesUID + '&sopUids=');
+    console.log(href);
+    dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Downloading').draw();
+
+    fetchAndParseTar(db, item.seriesUIDShort, href, jnlpPassword, function(errFetchAndParseTar) {
+      if(!errFetchAndParseTar) {
+        updateDownloadFlag(db, item.seriesUIDShort, true, function() {
+          dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Complete').draw();
+          callbackItem();
         });
+      }
+      else {
+        updateDownloadFlag(db, item.seriesUIDShort, false, function() {
+          dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Error').draw();
+          callbackItem();
+        });
+      }
+    });
+  }, function(errSeriesProcess) {
+      db.tciaSchema.find({
+        'type': "seriesDetails",
+        "downloadFlag": false
+      }).fetch(function(result) {
+        if(result.length == 0) {
+          cbDownloadSeries(null);
+        }
+        else {
+          console.log("Series download count " + result.length);
+          downloadSeries(db, result, jnlpUserId, jnlpPassword,
+              jnlpIncludeAnnotation, function() {
+                cbDownloadSeries(null);
+              });
+        }
+      });
+  });
+}
+
+var initDownloadMgr = function(jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, cbInitDownloadMgr) {
+  new IndexedDb({namespace: "mydb"}, function(db) {
+    db.addCollection("tciaSchema", function() {
+      async.series([
+          function(cbTask1){
+            db.tciaSchema.find({
+              'type': "seriesDetails",
+              "downloadFlag": true
+            }).fetch(function(result) {
+              if(result.length) {
+                output.innerHTML = "Updating rows ...";
+              }
+              async.each(result, function(item, cbUpdateRow) {
+                dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Complete').draw();
+                dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 6).data("100%").draw();
+                cbUpdateRow();
+              }, function(errUpdateRow) {
+                cbTask1(null, 'Updated all rows');
+              });
+            });
+          },
+          function(cbTask2){
+            output.innerHTML = "Download started ...";
+            db.tciaSchema.find({
+              'type': "seriesDetails",
+              "downloadFlag": false
+            }).fetch(function(result) {
+              if(!result.length) {
+                db.removeCollection("tciaSchema", function(){
+                  cbTask2(null, 'All series downloaded successfully');
+                });
+              }
+              else {
+                console.log("Series download count " + result.length);
+                downloadSeries(db, result, jnlpUserId, jnlpPassword,
+                    jnlpIncludeAnnotation, function() {
+                      db.removeCollection("tciaSchema", function(){
+                        cbTask2(null, 'All series downloaded successfully');
+                      });
+                    });
+              }
+            });
+          }
+      ],
+      // optional callback
+      function(err, results){
+        cbInitDownloadMgr();
       });
     });
   }, function(err) {
     console.log(err);
-    cbInitFunction(err);
   });
 }
 
 var bundle = {
+  execute: executeModule.execute,
   initDownloadMgr: initDownloadMgr,
-  storeSchema: saveManifest.storeSchema,
-  createFolderHierarchy: createFS.createFolderHierarchy
+  fetchJnlp: fetchJnlpModule.fetchJnlp,
+  storeSchema: storeSchemaModule.storeSchema,
+  restoreState: restoreStateModule.restoreState,
+  createFolderHierarchy: createFolderHierarchyModule.createFolderHierarchy
 };
 
 module.exports = bundle;
 
 }).call(this,require("buffer").Buffer)
-},{"./createFolderHierarchy":1,"./storeSchema":2,"async":3,"buffer":41,"events":45,"http":46,"https":50,"minimongo":4,"tar-stream":22}]},{},[74])(74)
+},{"./createFolderHierarchy":1,"./execute":2,"./fetchJnlp":3,"./restoreState":4,"./storeSchema":5,"async":6,"buffer":44,"events":48,"http":49,"https":53,"minimongo":7,"tar-stream":25}]},{},[77])(77)
 });

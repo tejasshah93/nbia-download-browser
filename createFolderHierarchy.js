@@ -1,12 +1,14 @@
 // Required Node Packages
 var async = require('async');
 var minimongo = require("minimongo");
+
 var IndexedDb = minimongo.IndexedDb;
 
 var createSeriesFolder = function(db, entry, series, cbCreateSeriesFolder) {
   async.each(series, function(seriesItem, cbSeries) {
     db.tciaSchema.findOne({'seriesUIDShort': seriesItem}, {}, function(doc) {
-      entry.getDirectory(doc.seriesUIDShort, {create:true}, function(entry) {
+      var seriesDirname = (seriesItem[0] == "." ? seriesItem.slice(-7) : seriesItem);
+      entry.getDirectory(seriesDirname, {create:true}, function(entry) {
         db.tciaSchema.upsert({
           '_id': doc._id,
           'type': doc.type,
@@ -16,6 +18,7 @@ var createSeriesFolder = function(db, entry, series, cbCreateSeriesFolder) {
           'numberDCM': doc.numberDCM,
           'size': doc.size,
           'fsPath': chrome.fileSystem.retainEntry(entry),
+          'downloadFlag': false,
           'files': []
         }, function() {
           cbSeries();
@@ -29,12 +32,13 @@ var createSeriesFolder = function(db, entry, series, cbCreateSeriesFolder) {
 
 var createStudiesFolder = function(db, entry, studies, cbCreateStudiesFolder) {
   async.each(studies, function(study, cbStudy) {
-    entry.getDirectory(study, {create:true}, function(entry) {
-        db.tciaSchema.findOne({'studyUID': study}, {}, function(doc) {
-          createSeriesFolder(db, entry, doc.series, function(){
-            cbStudy();
-          });
+    var studyDirname = (study[0] == "." ? study.slice(-7) : study);
+    entry.getDirectory(studyDirname, {create:true}, function(entry) {
+      db.tciaSchema.findOne({'studyUID': study}, {}, function(doc) {
+        createSeriesFolder(db, entry, doc.series, function(){
+          cbStudy();
         });
+      });
     });
   }, function(errStudy) {
     if(!errStudy)  cbCreateStudiesFolder();
@@ -76,11 +80,16 @@ var createFolderHierarchy = function(theEntry, cbCreateFolderHierarchy) {
     db.addCollection("tciaSchema", function() {
       db.tciaSchema.upsert({
         '_id': "chosenDir",
-        'chosenDirFolder': chrome.fileSystem.retainEntry(theEntry)
+        'chosenDirFolder': chrome.fileSystem.retainEntry(theEntry),
       }, function() {
         db.tciaSchema.find({'type': "collection"}).fetch(function(collections) {
           createCollectionsFolder(db, theEntry, collections, function(){
-            cbCreateFolderHierarchy();
+            db.tciaSchema.upsert({
+              '_id': "createFolderHierarchyInfo",
+              'createFolderHierarchyFlag': true
+            }, function() {
+              cbCreateFolderHierarchy();
+            });
           });
         });
       });

@@ -1,6 +1,7 @@
 // Required Node Packages
 var async = require('async');
 var minimongo = require('minimongo');
+
 var IndexedDb = minimongo.IndexedDb;
 
 var addPatientID = function(db, collection, patientID, cbAddPatientID) {
@@ -161,8 +162,13 @@ var storeSchema = function(schema, cbStoreSchema) {
         });
       }, function(errManifest) {
         if(!errManifest) {
-          console.log('TCIA Manifest schema successfully stored');
-          cbStoreSchema(null);
+          db.tciaSchema.upsert({
+            '_id': "storeSchemaInfo",
+            'storeSchemaFlag': true
+          }, function() {
+            console.log('TCIA Manifest schema successfully stored');
+            cbStoreSchema(null);
+          });
         }
         else {
           cbStoreSchema(errManifest);

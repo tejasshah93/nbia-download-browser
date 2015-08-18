@@ -1,16 +1,20 @@
 // Required Node Packages
-var http = require('http'),    
+var http = require('http'),
     https = require('https'),
     async = require('async'),
     tar = require('tar-stream'),
     minimongo = require("minimongo");
+
 var IndexedDb = minimongo.IndexedDb;
 
 var events = require('events');
 var eventEmitter = new events.EventEmitter();
 
-var saveManifest = require("./storeSchema");
-var createFS = require("./createFolderHierarchy");
+var executeModule = require("./execute");
+var fetchJnlpModule = require("./fetchJnlp");
+var storeSchemaModule = require("./storeSchema");
+var restoreStateModule = require("./restoreState");
+var createFolderHierarchyModule = require("./createFolderHierarchy");
 
 eventEmitter.on('customErr', function(err) {
   console.log(err);
@@ -32,7 +36,7 @@ var parseURL = function(href) {
   }
 }
 
-/* 
+/*
  * Fetches and returns the seriesUID folder location from Chrome local storage
  */
 var getSeriesUIDFolder = function(db, seriesUIDShort, cbGetSeriesUIDFolder) {
@@ -127,7 +131,26 @@ var updateFilesArray = function (files, headerName, downloadFlag, cbUpdateFilesA
         })(i);
       }
     }
-} 
+}
+
+var updateDownloadFlag = function(db, seriesUIDShort, downloadFlag, cbUpdateDownloadFlag) {
+  db.tciaSchema.findOne({'seriesUIDShort': seriesUIDShort}, {}, function(doc) {
+    db.tciaSchema.upsert({
+      '_id': doc._id,
+      'type': doc.type,
+      'seriesUID': doc.seriesUID,
+      'seriesUIDShort': doc.seriesUIDShort,
+      'hasAnnotation': doc.hasAnnotation,
+      'numberDCM': doc.numberDCM,
+      'size': doc.size,
+      'fsPath': doc.fsPath,
+      'downloadFlag': downloadFlag,
+      'files': doc.files
+    }, function() {
+      cbUpdateDownloadFlag();
+    });
+  });
+}
 
 /*
  * Upserts the files to the appropriate series document with downloadFlag status
@@ -141,7 +164,10 @@ var updateFileDB = function(db, headerName, seriesUIDShort, downloadFlag, cbUpda
         'seriesUID': doc.seriesUID,
         'seriesUIDShort': doc.seriesUIDShort,
         'hasAnnotation': doc.hasAnnotation,
+        'numberDCM': doc.numberDCM,
+        'size': doc.size,
         'fsPath': doc.fsPath,
+        'downloadFlag': doc.downloadFlag,
         'files': files
       }, function() {
         cbUpdateFileDB();
@@ -218,7 +244,7 @@ var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchA
                     }
                     else {
                       eventEmitter.emit('customErr', errDownloadFile);
-                      callback();                  
+                      callback();
                     }
                   });
             }
@@ -258,50 +284,109 @@ var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchA
   req.end();
 }
 
-/*
- * Creates the DB, Collection if not created and calls the main function
- */
-var initDownloadMgr = function(jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, cbInitFunction){
-  new IndexedDb({namespace: "mydb"}, function(db) {
-    db.addCollection("tciaSchema", function() {      
-      db.tciaSchema.find({'type': "seriesDetails"}).fetch(function(result) {
-        async.eachLimit(result, 3, function(item, callbackItem){
-          var href = encodeURI('https://public.cancerimagingarchive.net/nbia-download/servlet/DownloadServlet?userId='
-              + jnlpUserId + '&includeAnnotation=' + jnlpIncludeAnnotation +
-              '&hasAnnotation=' + item.hasAnnotation + '&seriesUid=' +
-              item.seriesUID + '&sopUids=');
-          console.log(href)
-          dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Downloading').draw();
-          fetchAndParseTar(db, item.seriesUIDShort, href, jnlpPassword, function(errFetchAndParseTar) {
-            if(!errFetchAndParseTar) {
-              dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Complete').draw();
-              callbackItem();
-            }
-            else {
-              dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Error').draw();
-              //ToDo push series with {downloadFlag: false} again for download
-              callbackItem(errFetchAndParseTar);
-            }
-          });
-        }, function(errSeriesProcess){
-          console.log("All series encountered successfully")
-          db.removeCollection("tciaSchema", function(){
-            if(!errSeriesProcess) cbInitFunction(null);
-            else cbInitFunction(errSeriesProcess);
-          });
+var downloadSeries = function(db, result, jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, cbDownloadSeries){
+  async.eachLimit(result, 3, function(item, callbackItem) {
+    var href = encodeURI('https://public.cancerimagingarchive.net/nbia-download/servlet/DownloadServlet?userId='
+        + jnlpUserId + '&includeAnnotation=' + jnlpIncludeAnnotation +
+        '&hasAnnotation=' + item.hasAnnotation + '&seriesUid=' +
+        item.seriesUID + '&sopUids=');
+    console.log(href);
+    dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Downloading').draw();
+
+    fetchAndParseTar(db, item.seriesUIDShort, href, jnlpPassword, function(errFetchAndParseTar) {
+      if(!errFetchAndParseTar) {
+        updateDownloadFlag(db, item.seriesUIDShort, true, function() {
+          dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Complete').draw();
+          callbackItem();
         });
+      }
+      else {
+        updateDownloadFlag(db, item.seriesUIDShort, false, function() {
+          dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Error').draw();
+          callbackItem();
+        });
+      }
+    });
+  }, function(errSeriesProcess) {
+      db.tciaSchema.find({
+        'type': "seriesDetails",
+        "downloadFlag": false
+      }).fetch(function(result) {
+        if(result.length == 0) {
+          cbDownloadSeries(null);
+        }
+        else {
+          console.log("Series download count " + result.length);
+          downloadSeries(db, result, jnlpUserId, jnlpPassword,
+              jnlpIncludeAnnotation, function() {
+                cbDownloadSeries(null);
+              });
+        }
+      });
+  });
+}
+
+var initDownloadMgr = function(jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, cbInitDownloadMgr) {
+  new IndexedDb({namespace: "mydb"}, function(db) {
+    db.addCollection("tciaSchema", function() {
+      async.series([
+          function(cbTask1){
+            db.tciaSchema.find({
+              'type': "seriesDetails",
+              "downloadFlag": true
+            }).fetch(function(result) {
+              if(result.length) {
+                output.innerHTML = "Updating rows ...";
+              }
+              async.each(result, function(item, cbUpdateRow) {
+                dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Complete').draw();
+                dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 6).data("100%").draw();
+                cbUpdateRow();
+              }, function(errUpdateRow) {
+                cbTask1(null, 'Updated all rows');
+              });
+            });
+          },
+          function(cbTask2){
+            output.innerHTML = "Download started ...";
+            db.tciaSchema.find({
+              'type': "seriesDetails",
+              "downloadFlag": false
+            }).fetch(function(result) {
+              if(!result.length) {
+                db.removeCollection("tciaSchema", function(){
+                  cbTask2(null, 'All series downloaded successfully');
+                });
+              }
+              else {
+                console.log("Series download count " + result.length);
+                downloadSeries(db, result, jnlpUserId, jnlpPassword,
+                    jnlpIncludeAnnotation, function() {
+                      db.removeCollection("tciaSchema", function(){
+                        cbTask2(null, 'All series downloaded successfully');
+                      });
+                    });
+              }
+            });
+          }
+      ],
+      // optional callback
+      function(err, results){
+        cbInitDownloadMgr();
       });
     });
   }, function(err) {
     console.log(err);
-    cbInitFunction(err);
   });
 }
 
 var bundle = {
+  execute: executeModule.execute,
   initDownloadMgr: initDownloadMgr,
-  storeSchema: saveManifest.storeSchema,
-  createFolderHierarchy: createFS.createFolderHierarchy
+  fetchJnlp: fetchJnlpModule.fetchJnlp,
+  storeSchema: storeSchemaModule.storeSchema,
+  restoreState: restoreStateModule.restoreState,
+  createFolderHierarchy: createFolderHierarchyModule.createFolderHierarchy
 };
 
 module.exports = bundle;

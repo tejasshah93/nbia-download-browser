@@ -15,7 +15,7 @@ chrome.runtime.onMessageExternal.addListener(function(message, sender, sendRespo
 
 chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
   if(message.appLoad) {
-    console.log("background.js ack: Chrome App loaded. Sending JNLP URL");
+    console.log("background.js ack: Chrome App loaded. Sending JNLP URL to app.js");
     chrome.runtime.sendMessage({jnlpURL: saveJnlpURL}, function(response) {
       console.log(response.ack)
     });

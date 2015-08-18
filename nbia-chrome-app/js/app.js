@@ -1,15 +1,8 @@
 var chooseDirButton = document.querySelector('#chooseDirectory');
 var saveFileButton = document.querySelector('#save');
 var output = document.querySelector('#output');
-var jnlpURL, saveChooseDirEntry, manifestSchema;
-/*
-(function () {
-  var old = console.log;
-  var logger = document.getElementById('log');
-  console.log = function (message) {
-    logger.innerText += message + '\n';
-  }
-})();*/
+var saveChooseDirEntry, manifestSchema;
+var restoreStateSchema, restoreStateFolder;
 
 var errorHandler = function(e) {
   console.error(e);
@@ -20,13 +13,13 @@ var asyncLoop = function(o) {
   length = o.length;
 
   var loop = function() {
-      i++;
-      if (i == length) {
-            o.callback();
-            return;
-          }
-      o.functionToLoop(loop, i);
-    } 
+    i++;
+    if (i == length) {
+      o.callback();
+      return;
+    }
+    o.functionToLoop(loop, i);
+  } 
   loop();
 }
 
@@ -39,7 +32,7 @@ var displayManifestSchema = function(manifestSchema, cbDisplayManifestSchema) {
       var localArray = [manifest_i[0], manifest_i[1], manifest_i[2],
       manifest_i[3], Math.round(
           ((parseInt(manifest_i[6]) + parseInt(manifest_i[7])*1.0)
-             /1024/1024)*100)/100, manifest_i[5], "0%", "Not Started"];
+           /1024/1024)*100)/100, manifest_i[5], "0%", "Not Started"];
       appendArray.push(localArray);
       loop();
     },
@@ -71,6 +64,76 @@ var downloadManifestSchema = function(cbDownloadManifestSchema) {
   x.send(null);
 }
 
+var getPreviousState = function() {
+  bundle.restoreState(function(result) {
+    if(!result.storeSchemaFlag && !result.createFolderHierarchyFlag) {
+      output.innerHTML = "No previous download state found";
+      restoreStateSchema = false;
+      restoreStateFolder = false;
+      chooseDirButton.disabled = false;
+    }
+    else if(result.storeSchemaFlag && !result.createFolderHierarchyFlag) {
+      chooseDirButton.disabled = false;
+      restoreStateSchema = true;
+      restoreStateFolder = false;
+    }
+    else if(result.storeSchemaFlag && result.createFolderHierarchyFlag) {
+      restoreStateSchema = true;
+      restoreStateFolder = true;
+      bundle.execute(restoreStateSchema, restoreStateFolder, null,
+          function(errExecute) {
+            console.log("All files downloaded successfully to selected folder");
+            output.innerHTML = "Download completed successfully";
+          });
+    }
+  });
+}
+
+var bootJnlp = function(messageJnlpURL) {
+  bundle.fetchJnlp(messageJnlpURL, function(errFetchJnlp, fetchJnlpURL) {
+    if(errFetchJnlp) {
+      output.innerHTML = "<br/>Error: JNLP URL Not found <br/><br/>Retry triggering "
+        + "the application from public.cancerimagingarchive.net";
+    }
+    else {
+      jnlpURL = fetchJnlpURL;
+      var x = new XMLHttpRequest();
+      x.open("GET", jnlpURL, true);
+      x.onreadystatechange = function() {
+        if(x.readyState == 4 && x.status == 200) {
+          var doc = x.responseText;
+          if (window.DOMParser) {
+            parser = new DOMParser();
+            xmlDoc = parser.parseFromString(doc,"text/xml");
+          }
+          else {
+            alert("Error: window.DOMParser not supported");
+          }
+          jnlpArgument = xmlDoc.getElementsByTagName("argument")[0].childNodes[0].nodeValue;
+          var properties = xmlDoc.getElementsByTagName('property');
+          for(var i = 0; i < properties.length; i++) {
+            if (properties[i].getAttribute('name') == "jnlp.includeAnnotation")
+              jnlpIncludeAnnotation = true;
+            else if (properties[i].getAttribute('name') == "jnlp.userId")
+              jnlpUserId = properties[i].getAttribute('value');
+            else if (properties[i].getAttribute('name') == "jnlp.password")
+              jnlpPassword = properties[i].getAttribute('value');
+            else if (properties[i].getAttribute('name') == "jnlp.downloadServerUrl")
+              jnlpDownloadServerUrl = properties[i].getAttribute('value');
+          }
+          downloadManifestSchema(function() {
+            getPreviousState();
+          });
+        }
+        else if(x.status >= 500) {
+          output.innerHTML = "<br/>Error downloading JNLP<br/><br/>Restart Application "
+        }
+      }
+      x.send(null);
+    }
+  });
+}
+
 /*
  * OnClick "Choose Directory": stores the directory path, creates consequent
  * directories within the same folder for collection, patientID, etc. and sets
@@ -87,7 +150,7 @@ chooseDirButton.addEventListener('click', function(e) {
     }
     saveChooseDirEntry = theEntry;
     document.querySelector('#file_path').value = theEntry.fullPath;
-    output.innerText = '';
+    output.innerHTML = '';
     saveFileButton.disabled = false;
   });
 });
@@ -98,28 +161,11 @@ chooseDirButton.addEventListener('click', function(e) {
  * calls functions to save files to the client's file system
  */
 saveFileButton.addEventListener('click', function(e) {
-  console.log("Saving Manifest Schema ..");
-  output.innerHTML = "Initializing database ... (May take upto 5 minutes for huge downloads)";
-  bundle.storeSchema(manifestSchema, function(errStoreSchema) {
-    output.innerHTML = "Creating folders ... ";
-    console.log("Creating Folder hierarchy ...");
-    bundle.createFolderHierarchy(saveChooseDirEntry, function() {
-      console.log("Folder hierarchy created successfully");
-      output.innerHTML = "Download started ...";
-      // ToDO helper function initDownloadMgr to download failed series
-      bundle.initDownloadMgr(jnlpUserId, jnlpPassword,
-          jnlpIncludeAnnotation, function(errInitFunction) {
-            if (!errInitFunction) {
-              console.log("All files downloaded successfully to selected folder");
-              output.innerHTML = "Download complete";
-            }
-            else {
-              console.log(errInitFunction);
-              output.innerHTML = errInitFunction;
-            }
-          });
-    });
-  });
+  bundle.execute(restoreStateSchema, restoreStateFolder, saveChooseDirEntry,
+      function(errExecute) {
+        console.log("All files downloaded successfully to selected folder");
+        output.innerHTML = "Download completed successfully";
+      });
 });
 
 // launchData object attributes: id, url, referrerUrl
@@ -155,40 +201,13 @@ $(document).ready(function() {
  * Receving end for JNLP URL message from background.js
  */
 chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
-  if (message.jnlpURL) {
-    console.log("onMessage: jnlp URL " + message.jnlpURL);
+  console.log("onMessage: jnlp URL " + message.jnlpURL);
+  if(message.jnlpURL) {
     output.innerHTML = "Populating table ...";
-    jnlpURL = message.jnlpURL;
-    var x = new XMLHttpRequest();
-    x.open("GET", jnlpURL, true);
-    x.onreadystatechange = function() {
-      if (x.readyState == 4 && x.status == 200) {
-        var doc = x.responseText;
-        if (window.DOMParser) {
-          parser = new DOMParser();
-          xmlDoc = parser.parseFromString(doc,"text/xml");
-        }
-        else {
-          alert("Error: window.DOMParser not supported");
-        }
-        jnlpArgument = xmlDoc.getElementsByTagName("argument")[0].childNodes[0].nodeValue;
-        var properties = xmlDoc.getElementsByTagName('property');
-        for(var i = 0; i < properties.length; i++) {
-          if (properties[i].getAttribute('name') == "jnlp.includeAnnotation")
-            jnlpIncludeAnnotation = true;
-          else if (properties[i].getAttribute('name') == "jnlp.userId")
-            jnlpUserId = properties[i].getAttribute('value');
-          else if (properties[i].getAttribute('name') == "jnlp.password")
-            jnlpPassword = properties[i].getAttribute('value');
-          else if (properties[i].getAttribute('name') == "jnlp.downloadServerUrl")
-            jnlpDownloadServerUrl = properties[i].getAttribute('value');
-        }
-        downloadManifestSchema(function() {
-          output.innerHTML = "";
-        });
-      }
-    }
-    x.send(null);
-    sendResponse({ack: "true"});
   }
+  else {
+    output.innerHTML = "Attempting to restore previous state ...";
+  }
+  bootJnlp(message.jnlpURL);
+  sendResponse({ack: "true"});
 });
