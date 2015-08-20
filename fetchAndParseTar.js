@@ -12,6 +12,7 @@ var eventEmitter = new events.EventEmitter();
 
 var executeModule = require("./execute");
 var fetchJnlpModule = require("./fetchJnlp");
+var updateRowsModule = require("./updateRows");
 var storeSchemaModule = require("./storeSchema");
 var restoreStateModule = require("./restoreState");
 var createFolderHierarchyModule = require("./createFolderHierarchy");
@@ -115,25 +116,7 @@ var downloadFile = function(seriesUIDEntry, headerName, blob, cbDownloadFile) {
   });
 }
 
-var updateFilesArray = function (files, headerName, downloadFlag, cbUpdateFilesArray) {
-    if(!downloadFlag) {
-      var fileItem = {'name': headerName, 'downloaded': downloadFlag};
-      var files = files.concat([fileItem]);
-      cbUpdateFilesArray(files);
-    }
-    else {
-      for (var i in files) {
-        (function(index) {
-          if (files[index].name == headerName) {
-            files[index].downloaded = downloadFlag;
-            cbUpdateFilesArray(files);
-          }
-        })(i);
-      }
-    }
-}
-
-var updateDownloadFlag = function(db, seriesUIDShort, downloadFlag, cbUpdateDownloadFlag) {
+var updateSeriesDownloadStatus = function(db, seriesUIDShort, downloadStatus, cbUpdateSeriesDownloadFlag) {
   db.tciaSchema.findOne({'seriesUIDShort': seriesUIDShort}, {}, function(doc) {
     db.tciaSchema.upsert({
       '_id': doc._id,
@@ -144,20 +127,27 @@ var updateDownloadFlag = function(db, seriesUIDShort, downloadFlag, cbUpdateDown
       'numberDCM': doc.numberDCM,
       'size': doc.size,
       'fsPath': doc.fsPath,
-      'downloadFlag': downloadFlag,
+      'downloadStatus': downloadStatus,
+      'downloadedSize': doc.downloadedSize,
       'files': doc.files
     }, function() {
-      cbUpdateDownloadFlag();
+      cbUpdateSeriesDownloadFlag();
     });
   });
 }
 
+var updateFilesArray = function (files, headerName, cbUpdateFilesArray) {
+  var fileItem = headerName;
+  var files = files.concat([fileItem]);
+  cbUpdateFilesArray(files);
+}
+
 /*
- * Upserts the files to the appropriate series document with downloadFlag status
+ * Upserts the files to the appropriate series document
  */
-var updateFileDB = function(db, headerName, seriesUIDShort, downloadFlag, cbUpdateFileDB) {
+var updateFileDB = function(db, seriesUIDShort, headerName, bufferSize, cbUpdateFileDB) {
   db.tciaSchema.findOne({'seriesUIDShort': seriesUIDShort}, {}, function(doc) {
-    updateFilesArray(doc.files, headerName, downloadFlag, function(files){
+    updateFilesArray(doc.files, headerName, function(files) {
       db.tciaSchema.upsert({
         '_id': doc._id,
         'type': doc.type,
@@ -167,7 +157,8 @@ var updateFileDB = function(db, headerName, seriesUIDShort, downloadFlag, cbUpda
         'numberDCM': doc.numberDCM,
         'size': doc.size,
         'fsPath': doc.fsPath,
-        'downloadFlag': doc.downloadFlag,
+        'downloadStatus': doc.downloadStatus,
+        'downloadedSize': doc.downloadedSize + bufferSize,
         'files': files
       }, function() {
         cbUpdateFileDB();
@@ -179,11 +170,12 @@ var updateFileDB = function(db, headerName, seriesUIDShort, downloadFlag, cbUpda
 /*
  * Fetch the tar from the 'href' passed and parse it on-the-fly
  */
-var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchAndParseTar){
+var fetchAndParseTar = function(db, item, href, jnlpPassword, cbFetchAndParseTar){
   var url = parseURL(href);
   var chunkDownload = 0,
-  totalLength = dTable.cell(dTable.row("[id='row_" + seriesUIDShort + "']").node(), 4).data();
-  console.log("totalLength " + totalLength);
+      updateLength = 0,
+      prevDownloadedSize = item.downloadedSize;
+  console.log(item.seriesUIDShort + " downloadedSize " + prevDownloadedSize);
   var options = {
     protocol: url.protocol,
     host: url.host,
@@ -200,11 +192,11 @@ var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchA
       // Transforming the 'arraybuffer' to 'Buffer' for compatibility with the Stream API
       chunkDownload += chunk.length;
       console.log("chunkDownload  " + chunkDownload);
-      var updateLength = Math.round((chunkDownload*1.0)/1024/1024/totalLength*100);
+      updateLength = Math.round(((chunkDownload*1.0/1024/1024) + prevDownloadedSize)/item.size*100);
+      console.log("updateLength " + updateLength);
       if(updateLength > 100)
         updateLength = 100;
-      console.log("updateLength " + updateLength);
-      dTable.cell(dTable.row("[id='row_" + seriesUIDShort + "']").node(), 6).data(updateLength+"%").draw();
+      dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 6).data(updateLength+"%").draw();
       tarParser.write(new Buffer(chunk));
     });
 
@@ -217,49 +209,47 @@ var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchA
 
     // For each file entry, do the following
     tarParser.on('entry', function(header, stream, callback) {
-      var downloadFlag = false;
       console.log("File found " + header.name + " of size ~" +
-          Math.round(header.size/1024) + " KB");
+          Math.round((header.size*1.0)/1024/1024*100)/100 + " MB");
 
-      updateFileDB(db, header.name, seriesUIDShort, downloadFlag, function(){
-        var buffer = [];
-        stream.on('data', function(data){
-          buffer.push(data);
-        });
+      var buffer = [];
+      stream.on('data', function(data){
+        buffer.push(data);
+      });
 
-        stream.on('end', function() {
-          buffer = Buffer.concat(buffer);
-          getSeriesUIDFolder(db, seriesUIDShort, function(seriesUIDEntry) {
-            if (seriesUIDEntry) {
-              var blob = new Blob([buffer], {type: 'application/octet-binary'});
-              downloadFile(seriesUIDEntry, header.name, blob,
-                  function(errDownloadFile) {
-                    if(!errDownloadFile) {
+      stream.on('end', function() {
+        buffer = Buffer.concat(buffer);
+        console.log("buffer size MB " + (buffer.length*1.0)/1024/1024);
+        getSeriesUIDFolder(db, item.seriesUIDShort, function(seriesUIDEntry) {
+          if(seriesUIDEntry) {
+            var blob = new Blob([buffer], {type: 'application/octet-binary'});
+            downloadFile(seriesUIDEntry, header.name, blob,
+                function(errDownloadFile) {
+                  if(!errDownloadFile) {
+                    var bufferSize = Math.round((buffer.length*1.0)/1024/1024*100)/100;
+                    updateFileDB(db, item.seriesUIDShort, header.name, bufferSize, function() {
                       buffer = [];
-                      downloadFlag = true;
-                      updateFileDB(db, header.name, seriesUIDShort, downloadFlag, function() {
-                        console.log("<< EOF >>");
-                        callback();
-                      });
-                    }
-                    else {
-                      eventEmitter.emit('customErr', errDownloadFile);
+                      console.log("<< EOF >>");
                       callback();
-                    }
-                  });
-            }
-            else {
-              eventEmitter.emit('customErr',
-                  "Error: seriesUID fsPath not present in DB");
-              callback();
-            }
-          });
-        })
-
-        .on('error', function(err) {
-          console.log(err);
-          cbFetchAndParseTar(err);
+                    });
+                  }
+                  else {
+                    eventEmitter.emit('customErr', errDownloadFile);
+                    callback();
+                  }
+                });
+          }
+          else {
+            eventEmitter.emit('customErr',
+                "Error: seriesUID fsPath not present in DB");
+            callback();
+          }
         });
+      })
+
+      .on('error', function(err) {
+        console.log(err);
+        cbFetchAndParseTar(err);
       });
       //stream.resume();
     })
@@ -271,7 +261,6 @@ var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchA
 
     .on('finish', function(){
       console.log("Tar files processed successfully");
-      chunkDownload = 0;
       cbFetchAndParseTar(null);
     });
   });
@@ -286,31 +275,58 @@ var fetchAndParseTar = function(db, seriesUIDShort, href, jnlpPassword, cbFetchA
 
 var downloadSeries = function(db, result, jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, cbDownloadSeries){
   async.eachLimit(result, 3, function(item, callbackItem) {
-    var href = encodeURI('https://public.cancerimagingarchive.net/nbia-download/servlet/DownloadServlet?userId='
-        + jnlpUserId + '&includeAnnotation=' + jnlpIncludeAnnotation +
-        '&hasAnnotation=' + item.hasAnnotation + '&seriesUid=' +
-        item.seriesUID + '&sopUids=');
-    console.log(href);
-    dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Downloading').draw();
+    async.waterfall([
+        function(cbSopUIDsList) {
+          db.tciaSchema.findOne({'seriesUIDShort': item.seriesUIDShort}, {}, function(doc) {
+            if(doc.files && doc.files.length < 1000) {
+              var sopUIDsList = [];
+              async.each(doc.files, function(sopUID, cbAppendSopUID){
+                var pos = sopUID.indexOf(".dcm");
+                sopUIDsList.push("'" + sopUID.substring(0, pos) + "'");
+                cbAppendSopUID();
+              }, function(err) {
+                cbSopUIDsList(null, sopUIDsList.join(","));
+              });
+            }
+            else {
+              cbSopUIDsList(null, "");
+            }
+          });
+        },
+        function(sopUIDsList, cbProcessSeries) {
+          var href = encodeURI('https://public.cancerimagingarchive.net/nbia-download/servlet/DownloadServlet?userId='
+              + jnlpUserId + '&includeAnnotation=' + jnlpIncludeAnnotation +
+              '&hasAnnotation=' + item.hasAnnotation + '&seriesUid=' +
+              item.seriesUID + '&sopUids=' + sopUIDsList);
+          console.log(href);
+          dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Downloading').draw();
 
-    fetchAndParseTar(db, item.seriesUIDShort, href, jnlpPassword, function(errFetchAndParseTar) {
-      if(!errFetchAndParseTar) {
-        updateDownloadFlag(db, item.seriesUIDShort, true, function() {
-          dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Complete').draw();
-          callbackItem();
-        });
-      }
-      else {
-        updateDownloadFlag(db, item.seriesUIDShort, false, function() {
-          dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Error').draw();
-          callbackItem();
-        });
-      }
+          updateSeriesDownloadStatus(db, item.seriesUIDShort, 1, function() {
+            fetchAndParseTar(db, item, href, jnlpPassword, function(errFetchAndParseTar) {
+              if(!errFetchAndParseTar) {
+                  updateSeriesDownloadStatus(db, item.seriesUIDShort, 2, function() {
+                    dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Complete').draw();
+                    cbProcessSeries();
+                  });
+              }
+              else {
+                updateSeriesDownloadStatus(db, item.seriesUIDShort, 0, function() {
+                  dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 6).data("0%").draw();
+                  dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Error').draw();
+                  cbProcessSeries();
+                });
+              }
+            });
+          });
+        }
+    ], function (err, result) {
+      callbackItem();
     });
+
   }, function(errSeriesProcess) {
-      db.tciaSchema.find({
-        'type': "seriesDetails",
-        "downloadFlag": false
+    db.tciaSchema.find({
+      'type': "seriesDetails",
+      "downloadStatus": {$ne: 2}
       }).fetch(function(result) {
         if(result.length == 0) {
           cbDownloadSeries(null);
@@ -330,32 +346,40 @@ var initDownloadMgr = function(jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, 
   new IndexedDb({namespace: "mydb"}, function(db) {
     db.addCollection("tciaSchema", function() {
       async.series([
-          function(cbTask1){
+          function(cbStep1){
             db.tciaSchema.find({
               'type': "seriesDetails",
-              "downloadFlag": true
+              "downloadStatus": {$ne: 0}
             }).fetch(function(result) {
               if(result.length) {
                 output.innerHTML = "Updating rows ...";
               }
+              console.log("Partial/Complete downloads");
               async.each(result, function(item, cbUpdateRow) {
-                dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Complete').draw();
-                dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 6).data("100%").draw();
+                console.log(item.seriesUIDShort);
+                if(item.downloadStatus == 1) {
+                  dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 6).data(Math.round(item.downloadedSize/item.size*100) + "%").draw();
+                  dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Incomplete').draw();
+                }
+                else if(item.downloadStatus == 2) {
+                  dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 6).data("100%").draw();
+                  dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Complete').draw();
+                }
                 cbUpdateRow();
               }, function(errUpdateRow) {
-                cbTask1(null, 'Updated all rows');
+                cbStep1(null, 'Updated all rows');
               });
             });
           },
-          function(cbTask2){
+          function(cbStep2){
             output.innerHTML = "Download started ...";
             db.tciaSchema.find({
               'type': "seriesDetails",
-              "downloadFlag": false
+              "downloadStatus": {$ne: 2}
             }).fetch(function(result) {
               if(!result.length) {
                 db.removeCollection("tciaSchema", function(){
-                  cbTask2(null, 'All series downloaded successfully');
+                  cbStep2(null, 'All series downloaded successfully');
                 });
               }
               else {
@@ -363,14 +387,13 @@ var initDownloadMgr = function(jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, 
                 downloadSeries(db, result, jnlpUserId, jnlpPassword,
                     jnlpIncludeAnnotation, function() {
                       db.removeCollection("tciaSchema", function(){
-                        cbTask2(null, 'All series downloaded successfully');
+                        cbStep2(null, 'All series downloaded successfully');
                       });
                     });
               }
             });
           }
       ],
-      // optional callback
       function(err, results){
         cbInitDownloadMgr();
       });
@@ -384,6 +407,7 @@ var bundle = {
   execute: executeModule.execute,
   initDownloadMgr: initDownloadMgr,
   fetchJnlp: fetchJnlpModule.fetchJnlp,
+  updateRows: updateRowsModule.updateRows,
   storeSchema: storeSchemaModule.storeSchema,
   restoreState: restoreStateModule.restoreState,
   createFolderHierarchy: createFolderHierarchyModule.createFolderHierarchy

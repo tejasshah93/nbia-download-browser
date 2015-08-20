@@ -8,6 +8,20 @@ var restoreState = function(cbRestoreState) {
   new IndexedDb({namespace: "mydb"}, function(db) {
     db.addCollection("tciaSchema", function() {
       async.parallel({
+        deleteRemovedSeries: function(callback) {
+          db.tciaSchema.findOne({'_id': "removedSeries"}, {}, function(doc) {
+            if(doc && doc.seriesArray.length) {
+              async.each(doc.seriesArray, function(item, cbItem){
+                $("[id='row_"+item + "']").addClass("toRemove");
+                cbItem();
+              }, function(err) {
+                dTable.rows('.toRemove').remove().draw();
+                callback(null, null);
+              });
+            }            
+            else callback(null, null);
+          });
+        },
         storeSchemaFlag: function(callback) {
           db.tciaSchema.findOne({'_id': "storeSchemaInfo"}, {}, function(schemaExist) {
             if(!schemaExist) {

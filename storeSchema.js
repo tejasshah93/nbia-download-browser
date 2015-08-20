@@ -151,28 +151,37 @@ var storeSchema = function(schema, cbStoreSchema) {
   console.log("Total manifest splits " + manifestLen);
   new IndexedDb({namespace: "mydb"}, function(db) {
     db.addCollection("tciaSchema", function() {
-      async.eachSeries(schema, function(manifest, cbManifest){
-        manifest = manifest.split("|");
-        insertCollectionTable(db, manifest, function(errInsertCollectionTable) {
-          insertPatientTable(db, manifest, function(errInsertPatientTable) {
-            insertStudyTable(db, manifest, function(errInsertStudyTable) {
-              cbManifest();
+      db.tciaSchema.findOne({'_id': "removedSeries"}, {}, function(doc) {
+        var removedSeries = [];
+        if(doc && doc.seriesArray.length)
+          removedSeries = doc.seriesArray;
+        async.eachSeries(schema, function(manifest, cbManifest){
+          manifest = manifest.split("|");
+          if(removedSeries.indexOf(manifest[3].slice(-8)) == -1) {
+            insertCollectionTable(db, manifest, function(errInsertCollectionTable) {
+              insertPatientTable(db, manifest, function(errInsertPatientTable) {
+                insertStudyTable(db, manifest, function(errInsertStudyTable) {
+                  cbManifest();
+                });
+              });
             });
-          });
+          }
+          else
+            cbManifest();
+        }, function(errManifest) {
+          if(!errManifest) {
+            db.tciaSchema.upsert({
+              '_id': "storeSchemaInfo",
+              'storeSchemaFlag': true
+            }, function() {
+              console.log('TCIA Manifest schema successfully stored');
+              cbStoreSchema(null);
+            });
+          }
+          else {
+            cbStoreSchema(errManifest);
+          }
         });
-      }, function(errManifest) {
-        if(!errManifest) {
-          db.tciaSchema.upsert({
-            '_id': "storeSchemaInfo",
-            'storeSchemaFlag': true
-          }, function() {
-            console.log('TCIA Manifest schema successfully stored');
-            cbStoreSchema(null);
-          });
-        }
-        else {
-          cbStoreSchema(errManifest);
-        }
       });
     });
   }, function(err) {

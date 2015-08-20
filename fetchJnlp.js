@@ -3,18 +3,22 @@ var minimongo = require('minimongo');
 
 var IndexedDb = minimongo.IndexedDb;
 
-var fetchJnlp = function(jnlpURL, cbFetchJnlp) {
+var fetchJnlp = function(launchData, jnlpURL, cbFetchJnlp) {
   new IndexedDb({namespace: "mydb"}, function(db) {
-    db.addCollection("tciaSchema", function() {
-      if(jnlpURL) {
-        db.tciaSchema.upsert({
-          '_id': "jnlpInfo",
-          'jnlpURL': jnlpURL
-        }, function() {
-          cbFetchJnlp(null, jnlpURL);
+    if(launchData.referrerUrl) {
+      db.removeCollection("tciaSchema", function(){
+        db.addCollection("tciaSchema", function() {
+          db.tciaSchema.upsert({
+            '_id': "jnlpInfo",
+            'jnlpURL': jnlpURL
+          }, function() {
+            cbFetchJnlp(null, jnlpURL);
+          });
         });
-      }
-      else {
+      });
+    }
+    else {
+      db.addCollection("tciaSchema", function() {
         db.tciaSchema.findOne({'_id': "jnlpInfo"}, {}, function(jnlpExist) {
           if(jnlpExist) {
             cbFetchJnlp(null, jnlpExist.jnlpURL);
@@ -23,8 +27,8 @@ var fetchJnlp = function(jnlpURL, cbFetchJnlp) {
             cbFetchJnlp("Error", null);
           }
         });
-      }
-    });
+      });
+    }
   }, function(err) {
     console.log(err);
   });

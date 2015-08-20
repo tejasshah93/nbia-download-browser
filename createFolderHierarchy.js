@@ -18,7 +18,8 @@ var createSeriesFolder = function(db, entry, series, cbCreateSeriesFolder) {
           'numberDCM': doc.numberDCM,
           'size': doc.size,
           'fsPath': chrome.fileSystem.retainEntry(entry),
-          'downloadFlag': false,
+          'downloadStatus': 0,
+          'downloadedSize': 0,
           'files': []
         }, function() {
           cbSeries();

@@ -1,6 +1,7 @@
-var chooseDirButton = document.querySelector('#chooseDirectory');
-var saveFileButton = document.querySelector('#save');
 var output = document.querySelector('#output');
+var saveFileButton = document.querySelector('#save');
+var chooseDirButton = document.querySelector('#chooseDirectory');
+var removeSeriesButton = document.querySelector('#rmSelectedSeries');
 var saveChooseDirEntry, manifestSchema;
 var restoreStateSchema, restoreStateFolder;
 
@@ -60,6 +61,9 @@ var downloadManifestSchema = function(cbDownloadManifestSchema) {
         cbDownloadManifestSchema();
       });
     }
+    else if(x.status >= 500) {
+      output.innerHTML = "<br/>Error downloading manifest<br/><br/>Restart Application "
+    }
   }
   x.send(null);
 }
@@ -71,6 +75,7 @@ var getPreviousState = function() {
       restoreStateSchema = false;
       restoreStateFolder = false;
       chooseDirButton.disabled = false;
+      removeSeriesButton.disabled = false;
     }
     else if(result.storeSchemaFlag && !result.createFolderHierarchyFlag) {
       chooseDirButton.disabled = false;
@@ -90,7 +95,7 @@ var getPreviousState = function() {
 }
 
 var bootJnlp = function(messageJnlpURL) {
-  bundle.fetchJnlp(messageJnlpURL, function(errFetchJnlp, fetchJnlpURL) {
+  bundle.fetchJnlp(launchData, messageJnlpURL, function(errFetchJnlp, fetchJnlpURL) {
     if(errFetchJnlp) {
       output.innerHTML = "<br/>Error: JNLP URL Not found <br/><br/>Retry triggering "
         + "the application from public.cancerimagingarchive.net";
@@ -161,6 +166,7 @@ chooseDirButton.addEventListener('click', function(e) {
  * calls functions to save files to the client's file system
  */
 saveFileButton.addEventListener('click', function(e) {
+  removeSeriesButton.disabled = true;
   bundle.execute(restoreStateSchema, restoreStateFolder, saveChooseDirEntry,
       function(errExecute) {
         console.log("All files downloaded successfully to selected folder");
@@ -177,6 +183,8 @@ $(document).ready(function() {
   console.log("Chrome Application loaded. Request JNLP URL");
   chrome.runtime.sendMessage({appLoad: "true"}, function(response) {});
   dTable = $('#displaySchema').DataTable({
+    "order": [[ 7, "asc" ]],
+    "select": true,
     "scrollY": "400px",
     "scrollCollapse": true,
     "lengthMenu": [[10, 25, 50, -1], [10, 25, 50, "All"]],
@@ -194,6 +202,16 @@ $(document).ready(function() {
     "fnRowCallback": function (nRow, aData) {
       $(nRow).attr("id", "row_" + aData[3].slice(-8));
     }
+  });
+});
+
+$('#displaySchema tbody').on('click', 'tr', function() {
+  $(this).toggleClass('selected');
+});
+
+removeSeriesButton.addEventListener('click', function(e) {
+  bundle.updateRows(dTable.rows('.selected').nodes(), function() {
+    dTable.rows('.selected').remove().draw();
   });
 });
 
