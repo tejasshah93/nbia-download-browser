@@ -4,10 +4,14 @@ var minimongo = require('minimongo');
 
 var IndexedDb = minimongo.IndexedDb;
 
+/*
+ * Executes deleteRemovedSeries, storeSchemaFlag, createFolderHierarchyFlag
+ */
 var restoreState = function(cbRestoreState) {
   new IndexedDb({namespace: "mydb"}, function(db) {
     db.addCollection("tciaSchema", function() {
-      async.parallel({
+      async.parallel( {
+        // Adds 'toRemove' class to seriesArray elements and deletes them
         deleteRemovedSeries: function(callback) {
           db.tciaSchema.findOne({'_id': "removedSeries"}, {}, function(doc) {
             if(doc && doc.seriesArray.length) {
@@ -22,6 +26,7 @@ var restoreState = function(cbRestoreState) {
             else callback(null, null);
           });
         },
+        // returns storeSchemaFlag if schemaExist
         storeSchemaFlag: function(callback) {
           db.tciaSchema.findOne({'_id': "storeSchemaInfo"}, {}, function(schemaExist) {
             if(!schemaExist) {
@@ -32,6 +37,7 @@ var restoreState = function(cbRestoreState) {
             }
           });
         },
+        // returns createFolderHierarchyFlag if folderHierarchyExist
         createFolderHierarchyFlag: function(callback) {
           db.tciaSchema.findOne({'_id': "createFolderHierarchyInfo"}, {}, function(folderHierarchyExist) {
             if(!folderHierarchyExist) {              

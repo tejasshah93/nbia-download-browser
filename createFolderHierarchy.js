@@ -4,6 +4,11 @@ var minimongo = require("minimongo");
 
 var IndexedDb = minimongo.IndexedDb;
 
+/*
+ * For each series of a particular study, create seriesUID's folder within that
+ * study folder in parallel and upsert series document in DB maintaining
+ * 'fsPath'(folder entry for a particular series)
+ */
 var createSeriesFolder = function(db, entry, series, cbCreateSeriesFolder) {
   async.each(series, function(seriesItem, cbSeries) {
     db.tciaSchema.findOne({'seriesUIDShort': seriesItem}, {}, function(doc) {
@@ -31,6 +36,10 @@ var createSeriesFolder = function(db, entry, series, cbCreateSeriesFolder) {
   });
 }
 
+/*
+ * For each study of a particular patient, create studyUID's folder within that
+ * patient's folder in parallel and call createSeriesFolder()
+ */
 var createStudiesFolder = function(db, entry, studies, cbCreateStudiesFolder) {
   async.each(studies, function(study, cbStudy) {
     var studyDirname = (study[0] == "." ? study.slice(-7) : study);
@@ -46,6 +55,10 @@ var createStudiesFolder = function(db, entry, studies, cbCreateStudiesFolder) {
   });
 }
 
+/*
+ * For each patient in a particular collection, create patient's folder within
+ * that collection's folder in parallel and call createStudiesFolder()
+ */
 var createPatientsFolder = function(db, entry, patients, cbCreatePatientsFolder) {
   async.each(patients, function(patient, cbPatient) {
     entry.getDirectory(patient, {create:true}, function(entry) {
@@ -60,6 +73,10 @@ var createPatientsFolder = function(db, entry, patients, cbCreatePatientsFolder)
   });
 }
 
+/*
+ * For each collection in DB, create collection's folder within the user's
+ * chosen directory in parallel and call createPatientsFolder()
+ */
 var createCollectionsFolder = function(db, theEntry, collections, cbCreateCollectionFolder) {
   async.each(collections, function(collection, cbCollection) {
     chrome.fileSystem.getWritableEntry(theEntry, function(entry) {
@@ -76,6 +93,11 @@ var createCollectionsFolder = function(db, theEntry, collections, cbCreateCollec
   });
 }
 
+/*
+ * Upsert 'chosenDirFolder' in DB and create folders within user's chosen
+ * directory with appropriate hirarchy viz.,
+ * "collection > patientID > studyUID > seriesUID" for each of the entries
+ */
 var createFolderHierarchy = function(theEntry, cbCreateFolderHierarchy) {
   new IndexedDb({namespace: "mydb"}, function(db) {
     db.addCollection("tciaSchema", function() {
@@ -84,7 +106,7 @@ var createFolderHierarchy = function(theEntry, cbCreateFolderHierarchy) {
         'chosenDirFolder': chrome.fileSystem.retainEntry(theEntry),
       }, function() {
         db.tciaSchema.find({'type': "collection"}).fetch(function(collections) {
-          createCollectionsFolder(db, theEntry, collections, function(){
+          createCollectionsFolder(db, theEntry, collections, function() {
             db.tciaSchema.upsert({
               '_id': "createFolderHierarchyInfo",
               'createFolderHierarchyFlag': true

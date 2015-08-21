@@ -4,6 +4,9 @@ var minimongo = require('minimongo');
 
 var IndexedDb = minimongo.IndexedDb;
 
+/*
+ *
+ */
 var addPatientID = function(db, collection, patientID, cbAddPatientID) {
   db.tciaSchema.findOne({'collection': collection}, {}, function(doc) {
     var patients = doc.patients.concat([patientID]);
@@ -18,6 +21,9 @@ var addPatientID = function(db, collection, patientID, cbAddPatientID) {
   })
 }
 
+/*
+ *
+ */
 var insertCollectionTable = function(db, manifest, cbInsertCollectionTable) {
   var collection = manifest[0],
   patientID = manifest[1];
@@ -44,6 +50,9 @@ var insertCollectionTable = function(db, manifest, cbInsertCollectionTable) {
   });
 }
 
+/*
+ *
+ */
 var addStudyUID = function(db, patientID, studyUID, cbAddStudyUID) {
   db.tciaSchema.findOne({'patientID': patientID}, {}, function(doc) {
     var studies = doc.studies.concat([studyUID]);
@@ -57,6 +66,9 @@ var addStudyUID = function(db, patientID, studyUID, cbAddStudyUID) {
   })
 }
 
+/*
+ *
+ */
 var insertPatientTable = function(db, manifest, cbInsertPatientTable) {
   var patientID = manifest[1],
   studyUID = manifest[2].slice(-8);
@@ -82,6 +94,9 @@ var insertPatientTable = function(db, manifest, cbInsertPatientTable) {
   });
 }
 
+/*
+ *
+ */
 var insertSeriesTable = function(db, seriesUID, manifest, cbInsertSeriesTable) {
   db.tciaSchema.findOne({'seriesUID': seriesUID}, {}, function(seriesExist) {
     if(!seriesExist) {
@@ -106,6 +121,9 @@ var insertSeriesTable = function(db, seriesUID, manifest, cbInsertSeriesTable) {
   });
 }
 
+/*
+ *
+ */
 var addSeriesUID = function(db, studyUID, seriesUID, manifest, cbAddSeriesUID) {
   db.tciaSchema.findOne({'studyUID': studyUID}, {}, function(doc) {
     var series = doc.series.concat([seriesUID.slice(-8)]);
@@ -121,6 +139,9 @@ var addSeriesUID = function(db, studyUID, seriesUID, manifest, cbAddSeriesUID) {
   })
 }
 
+/*
+ *
+ */
 var insertStudyTable = function(db, manifest, cbInsertStudyTable) {
   var studyUID = manifest[2].slice(-8),
   seriesUID = manifest[3];
@@ -146,6 +167,10 @@ var insertStudyTable = function(db, manifest, cbInsertStudyTable) {
   });
 }
 
+/*
+ * Takes manifest schema as an argument and inserts appropriate documents for 
+ * collection, patient, study, series in 'tciaSchema' Minimongo collection
+ */
 var storeSchema = function(schema, cbStoreSchema) {
   var manifestLen = schema.length;
   console.log("Total manifest splits " + manifestLen);
@@ -157,6 +182,7 @@ var storeSchema = function(schema, cbStoreSchema) {
           removedSeries = doc.seriesArray;
         async.eachSeries(schema, function(manifest, cbManifest){
           manifest = manifest.split("|");
+          // If this series is not in removedSeries array then insert in DB
           if(removedSeries.indexOf(manifest[3].slice(-8)) == -1) {
             insertCollectionTable(db, manifest, function(errInsertCollectionTable) {
               insertPatientTable(db, manifest, function(errInsertPatientTable) {
@@ -170,6 +196,7 @@ var storeSchema = function(schema, cbStoreSchema) {
             cbManifest();
         }, function(errManifest) {
           if(!errManifest) {
+            // Set the 'storeSchemaFlag' for restoring state of the application
             db.tciaSchema.upsert({
               '_id': "storeSchemaInfo",
               'storeSchemaFlag': true

@@ -15,7 +15,7 @@ var asyncLoop = function(o) {
 
   var loop = function() {
     i++;
-    if (i == length) {
+    if(i == length) {
       o.callback();
       return;
     }
@@ -24,11 +24,15 @@ var asyncLoop = function(o) {
   loop();
 }
 
+/*
+ * Displays the downloaded manifest schema as DataTable
+ */
 var displayManifestSchema = function(manifestSchema, cbDisplayManifestSchema) {
   var appendArray = [];
   asyncLoop({
     length : manifestSchema.length,
     functionToLoop : function(loop, i) {
+      // For each manifest entry, push it's required fields in appendArray
       var manifest_i = manifestSchema[i].split("|");
       var localArray = [manifest_i[0], manifest_i[1], manifest_i[2],
       manifest_i[3], Math.round(
@@ -38,7 +42,8 @@ var displayManifestSchema = function(manifestSchema, cbDisplayManifestSchema) {
       loop();
     },
     callback : function() {
-      $('#displaySchema').DataTable().rows.add(appendArray).draw();
+      // Draw all the rows at once (minimize loading time)
+      dTable.rows.add(appendArray).draw();
       appendArray = [];
       cbDisplayManifestSchema(null);
     } 
@@ -46,28 +51,34 @@ var displayManifestSchema = function(manifestSchema, cbDisplayManifestSchema) {
 }
 
 /*
- *  Downloads the manifest schema with using arguments from the JNLP file.
+ *  Downloads the manifest schema using argument from the Jnlp file and calls 
+ *  displayManifestSchema() to display the manifest entries in DataTable 
  */
 var downloadManifestSchema = function(cbDownloadManifestSchema) {
   var x = new XMLHttpRequest();
-  var manifestUrl = jnlpDownloadServerUrl + "?serverjnlpfileloc=" + jnlpArgument;
+  var manifestUrl = jnlpDownloadServerUrl +"?serverjnlpfileloc="+ jnlpArgument;
   console.log("manifest URL: " + manifestUrl);
   x.open("GET", manifestUrl, true);
   x.onreadystatechange = function() {
-    if (x.readyState == 4 && x.status == 200) {
+    if(x.readyState == 4 && x.status == 200) {
       console.log(x.responseText);
       manifestSchema = x.responseText.trim().split("\n");
       displayManifestSchema(manifestSchema, function() {
         cbDownloadManifestSchema();
       });
     }
-    else if(x.status >= 500) {
-      output.innerHTML = "<br/>Error downloading manifest<br/><br/>Restart Application "
+    else if(x.status != 200) {
+      output.innerHTML = "<br/>Error downloading manifest<br/><br/>" +
+                         "Restart Application";
     }
   }
   x.send(null);
 }
 
+/*
+ * Calls restoreState() to verify if schema is stored in DB and whether folder
+ * hierarchy has been created within the user's filesystem
+ */
 var getPreviousState = function() {
   bundle.restoreState(function(result) {
     if(!result.storeSchemaFlag && !result.createFolderHierarchyFlag) {
@@ -82,6 +93,7 @@ var getPreviousState = function() {
       restoreStateSchema = true;
       restoreStateFolder = false;
     }
+    // if both flags are set, resume execution
     else if(result.storeSchemaFlag && result.createFolderHierarchyFlag) {
       restoreStateSchema = true;
       restoreStateFolder = true;
@@ -94,20 +106,28 @@ var getPreviousState = function() {
   });
 }
 
+/*
+ * Function to load and parse Jnlp file
+ * fetchJnlp() checks whether Jnlp URL has been passed explicitly i.e. from web
+ * page or if it exists within DB already and returns the Jnlp URL
+ */
 var bootJnlp = function(messageJnlpURL) {
   bundle.fetchJnlp(launchData, messageJnlpURL, function(errFetchJnlp, fetchJnlpURL) {
     if(errFetchJnlp) {
-      output.innerHTML = "<br/>Error: JNLP URL Not found <br/><br/>Retry triggering "
-        + "the application from public.cancerimagingarchive.net";
+      output.innerHTML = "<br/>Error: JNLP URL Not found <br/><br/>" + 
+                         "Retry triggering the application from " +
+                         "public.cancerimagingarchive.net";
     }
     else {
+      // Ajax request for fetching the Jnlp file
       jnlpURL = fetchJnlpURL;
       var x = new XMLHttpRequest();
       x.open("GET", jnlpURL, true);
       x.onreadystatechange = function() {
         if(x.readyState == 4 && x.status == 200) {
-          var doc = x.responseText;
-          if (window.DOMParser) {
+          // On retrieving Jnlp file, parse it
+          var doc = x.responseText;          
+          if(window.DOMParser) {
             parser = new DOMParser();
             xmlDoc = parser.parseFromString(doc,"text/xml");
           }
@@ -117,21 +137,23 @@ var bootJnlp = function(messageJnlpURL) {
           jnlpArgument = xmlDoc.getElementsByTagName("argument")[0].childNodes[0].nodeValue;
           var properties = xmlDoc.getElementsByTagName('property');
           for(var i = 0; i < properties.length; i++) {
-            if (properties[i].getAttribute('name') == "jnlp.includeAnnotation")
+            if(properties[i].getAttribute('name') == "jnlp.includeAnnotation")
               jnlpIncludeAnnotation = true;
-            else if (properties[i].getAttribute('name') == "jnlp.userId")
+            else if(properties[i].getAttribute('name') == "jnlp.userId")
               jnlpUserId = properties[i].getAttribute('value');
-            else if (properties[i].getAttribute('name') == "jnlp.password")
+            else if(properties[i].getAttribute('name') == "jnlp.password")
               jnlpPassword = properties[i].getAttribute('value');
-            else if (properties[i].getAttribute('name') == "jnlp.downloadServerUrl")
+            else if(properties[i].getAttribute('name') == "jnlp.downloadServerUrl")
               jnlpDownloadServerUrl = properties[i].getAttribute('value');
           }
+          // Using these Jnlp arguments, download the manifest
           downloadManifestSchema(function() {
             getPreviousState();
           });
         }
-        else if(x.status >= 500) {
-          output.innerHTML = "<br/>Error downloading JNLP<br/><br/>Restart Application "
+        else if(x.status != 200) {
+          output.innerHTML = "<br/>Error downloading JNLP<br/><br/>" + 
+                             "Restart Application";
         }
       }
       x.send(null);
@@ -140,13 +162,14 @@ var bootJnlp = function(messageJnlpURL) {
 }
 
 /*
- * OnClick "Choose Directory": stores the directory path, creates consequent
- * directories within the same folder for collection, patientID, etc. and sets
- * the appropriate entries in Chrome local storage as per the manifest.
+ * OnClick "Choose Directory":
+ * Stores the directory path in DB, creates respective directories within chosen
+ * folder viz., collection, patientID, studyUID, seriesUID
  */
 chooseDirButton.addEventListener('click', function(e) {
   chrome.fileSystem.chooseEntry({type: 'openDirectory'}, function(theEntry) {
-    if (!theEntry) {
+    // If user cancels the choose directory prompt
+    if(!theEntry) {
       document.querySelector('#file_path').value = null;
       output.innerText = 'No Directory selected';
       saveFileButton.disabled = true;
@@ -161,9 +184,9 @@ chooseDirButton.addEventListener('click', function(e) {
 });
 
 /*
- * OnClick: "Download Files": Downloads the tar file(s) from the server, parses
- * it, gets the previously stored folder paths from Chrome local storage and
- * calls functions to save files to the client's file system
+ * OnClick: "Download Files":
+ * Initiates execution of downloading the manifest entries and saving the files
+ * to appropriate directory
  */
 saveFileButton.addEventListener('click', function(e) {
   removeSeriesButton.disabled = true;
@@ -174,14 +197,13 @@ saveFileButton.addEventListener('click', function(e) {
       });
 });
 
-// launchData object attributes: id, url, referrerUrl
-
 /*
- * OnLoad Chrome App, send a message to background.js requesting JNLP URL
+ * onLoad Chrome Application:
+ * Initialize DataTable with required parameters and send message to
+ * 'background.js' requesting jnlpURL
  */
 $(document).ready(function() {
   console.log("Chrome Application loaded. Request JNLP URL");
-  chrome.runtime.sendMessage({appLoad: "true"}, function(response) {});
   dTable = $('#displaySchema').DataTable({
     "order": [[ 7, "asc" ]],
     "select": true,
@@ -203,12 +225,18 @@ $(document).ready(function() {
       $(nRow).attr("id", "row_" + aData[3].slice(-8));
     }
   });
+  chrome.runtime.sendMessage({appLoad: "true"}, function(response) {});
 });
 
+// Toggle '.selected' class on clicking a row
 $('#displaySchema tbody').on('click', 'tr', function() {
   $(this).toggleClass('selected');
 });
 
+/*
+ * onClick "Remove Series":
+ * Update list of removed series in DB and delete selected rows from DataTable
+ */
 removeSeriesButton.addEventListener('click', function(e) {
   bundle.updateRows(dTable.rows('.selected').nodes(), function() {
     dTable.rows('.selected').remove().draw();
@@ -216,7 +244,9 @@ removeSeriesButton.addEventListener('click', function(e) {
 });
 
 /*
- * Receving end for JNLP URL message from background.js
+ * onMessage listener:
+ * On receiving message from 'background.js' with jnlpURL, initiate populating
+ * the DataTable by calling bootJnlp()
  */
 chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
   console.log("onMessage: jnlp URL " + message.jnlpURL);

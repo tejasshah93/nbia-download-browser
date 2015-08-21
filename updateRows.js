@@ -4,6 +4,9 @@ var async = require('async'),
 
 var IndexedDb = minimongo.IndexedDb;
 
+/*
+ * Add row IDs to seriesArray maintaining stats of the series delete by user
+ */
 var updateRows = function(rownodes, cbUpdateRows) {
   new IndexedDb({namespace: "mydb"}, function(db) {
     db.addCollection("tciaSchema", function() {

@@ -3,6 +3,11 @@ var minimongo = require('minimongo');
 
 var IndexedDb = minimongo.IndexedDb;
 
+/*
+ * Checks if application has been invoked from web page or explicitly by user.
+ * If its from the wep page i.e. launchData.referrerUrl is true, remove previous
+ * collection from DB to initiate new download else just return Jnlp URL
+ */
 var fetchJnlp = function(launchData, jnlpURL, cbFetchJnlp) {
   new IndexedDb({namespace: "mydb"}, function(db) {
     if(launchData.referrerUrl) {

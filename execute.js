@@ -1,8 +1,14 @@
 // Required Node Packages
 var async = require('async');
 
+/*
+ * Takes restoreStateSchema, restoreStateFolder as arguments for processing
+ * states accordingly. Execution steps include storeSchema,
+ * createFolderHierarchy, initDownloadMgr
+ */
 var execute = function(restoreStateSchema, restoreStateFolder, saveChooseDirEntry, cbExecute) {
   async.series({
+    // Stores schema if not previously stored
     storeSchema: function(callback) {
       console.log("execute.storeSchema ..");
       if(!restoreStateSchema) {
@@ -16,6 +22,7 @@ var execute = function(restoreStateSchema, restoreStateFolder, saveChooseDirEntr
         callback(null, null);
       }
     },
+    // Creates folder hierarchy if not previously created
     createFolderHierarchy: function(callback) {
       console.log("execute.createFolderHierarchy ..");
       if(!restoreStateFolder) {
@@ -35,6 +42,7 @@ var execute = function(restoreStateSchema, restoreStateFolder, saveChooseDirEntr
         callback(null, null);
       }
     },
+    // Summons initDownloadMgr() with required Jnlp arguments
     initDownloadMgr: function(callback) {
       console.log("execute.initDownloadMgr ..");
       if(!restoreStateSchema && !restoreStateFolder) {
