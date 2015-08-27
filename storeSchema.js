@@ -5,7 +5,7 @@ var minimongo = require('minimongo');
 var IndexedDb = minimongo.IndexedDb;
 
 /*
- *
+ * Appends 'patientID' to 'patients' array
  */
 var addPatientID = function(db, collection, patientID, cbAddPatientID) {
   db.tciaSchema.findOne({'collection': collection}, {}, function(doc) {
@@ -22,7 +22,8 @@ var addPatientID = function(db, collection, patientID, cbAddPatientID) {
 }
 
 /*
- *
+ * Inserts 'collection' document if not already inserted
+ * Calls addPatientID for adding 'patientID' to 'patients' array
  */
 var insertCollectionTable = function(db, manifest, cbInsertCollectionTable) {
   var collection = manifest[0],
@@ -51,7 +52,7 @@ var insertCollectionTable = function(db, manifest, cbInsertCollectionTable) {
 }
 
 /*
- *
+ * Appends 'studyUID' to 'studies' array
  */
 var addStudyUID = function(db, patientID, studyUID, cbAddStudyUID) {
   db.tciaSchema.findOne({'patientID': patientID}, {}, function(doc) {
@@ -67,7 +68,8 @@ var addStudyUID = function(db, patientID, studyUID, cbAddStudyUID) {
 }
 
 /*
- *
+ * Inserts 'patient' document if not already inserted
+ * Calls addStudyUID() for adding 'studyUID' to 'studies' array
  */
 var insertPatientTable = function(db, manifest, cbInsertPatientTable) {
   var patientID = manifest[1],
@@ -95,7 +97,7 @@ var insertPatientTable = function(db, manifest, cbInsertPatientTable) {
 }
 
 /*
- *
+ * Inserts 'series' document along with it's attributes if not already inserted
  */
 var insertSeriesTable = function(db, seriesUID, manifest, cbInsertSeriesTable) {
   db.tciaSchema.findOne({'seriesUID': seriesUID}, {}, function(seriesExist) {
@@ -122,7 +124,7 @@ var insertSeriesTable = function(db, seriesUID, manifest, cbInsertSeriesTable) {
 }
 
 /*
- *
+ * Appends 'seriesUID' (seriesUIDShort i.e. last 8 characters) to 'series' array
  */
 var addSeriesUID = function(db, studyUID, seriesUID, manifest, cbAddSeriesUID) {
   db.tciaSchema.findOne({'studyUID': studyUID}, {}, function(doc) {
@@ -140,7 +142,8 @@ var addSeriesUID = function(db, studyUID, seriesUID, manifest, cbAddSeriesUID) {
 }
 
 /*
- *
+ * Inserts 'study' document if not already inserted
+ * Calls addSeriesUID() for adding 'seriesUID' to 'series' array
  */
 var insertStudyTable = function(db, manifest, cbInsertStudyTable) {
   var studyUID = manifest[2].slice(-8),
