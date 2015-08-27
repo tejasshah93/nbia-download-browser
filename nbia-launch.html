@@ -1,0 +1,46 @@
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Launch - NBIA Download Manager</title>
+<link rel="stylesheet" type="text/css" href="css/bootstrap.min.css">
+<script type="text/javascript" src="js/jquery-1.11.2.min.js"></script>
+<script type="text/javascript" src="js/bootstrap.min.js"></script>
+</head>
+<body>
+<br/><br/>
+<br/><br/>
+<h2 class="text-center">Launch - NBIA Download Manager</h2>
+<div id="content"
+  style="text-align: center;
+  vertical-align: middle;
+  margin-top: 12em;
+  margin-left: 10em;
+  margin-right: 10em;">
+
+  <input type="text" class="form-control" placeholder="Enter valid JNLP File URL" id="userJnlpURL">
+  <h4 class="text-left">E.g.: Complex hierarchy (3 collections, 4 patients, 6 studies, 7 series) ~ 20MB: <a href="http://researchweb.iiit.ac.in/~tejas.shah/gsoc15/demoApp/JNLPs/dynamic-jnlp-1438794772233.jnlp">dynamic-jnlp-1438794772233.jnlp</a></h4>
+  <br/>
+  <button id="theButton" class="btn btn-primary">Open Chrome App</button>
+</div>
+<script>
+document.getElementById("theButton").addEventListener("click",
+    function(e) {
+    var openAppWindow;
+    openAppWindow = window.open("http://researchweb.iiit.ac.in/~tejas.shah/gsoc15/demoApp/launch", "myWindow", "width=200, height=100");
+    console.log("Chrome Application opened");
+    openAppWindow.close();
+    var extensionID = "ohmocpnfkcbhpmmjalmhmghlpkmbhnlk";
+    if(chrome && chrome.runtime && chrome.runtime.sendMessage) {
+    console.log("Sending JNLP URL to Chrome App..");
+    chrome.runtime.sendMessage(
+        extensionID,
+        {jnlp: $('#userJnlpURL').val()},
+        function(response){
+        console.log(response);
+        });
+    }
+    }, false);
+</script>
+</body>
+</html>
