@@ -1,4 +1,5 @@
 ------
-Bulk Data Transfer - NBIA Download manager (browser based)
+Bulk Data Transfer - NBIA Download manager
 -------
 
+Documentation [here](Documentation.md)
