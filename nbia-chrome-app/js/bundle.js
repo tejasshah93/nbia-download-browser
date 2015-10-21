@@ -205,7 +205,7 @@ var IndexedDb = minimongo.IndexedDb;
  */
 var fetchJnlp = function(launchData, jnlpURL, cbFetchJnlp) {
   new IndexedDb({namespace: "mydb"}, function(db) {
-    if(launchData.referrerUrl) {
+    if(launchData.source === "url_handler") {
       db.removeCollection("tciaSchema", function(){
         db.addCollection("tciaSchema", function() {
           db.tciaSchema.upsert({
