@@ -11,7 +11,7 @@
   },
   "permissions": [
     {"fileSystem": ["write", "retainEntries", "directory"]},
-    "http://researchweb.iiit.ac.in/*",
+    "https://researchweb.iiit.ac.in/*",
     "https://*.cancerimagingarchive.net/*",
     "http://54.68.32.118/*"
   ],
@@ -24,6 +24,6 @@
     }
   },
   "externally_connectable": {
-    "matches": ["http://researchweb.iiit.ac.in/*"]
+    "matches": ["https://researchweb.iiit.ac.in/*"]
   }
 }

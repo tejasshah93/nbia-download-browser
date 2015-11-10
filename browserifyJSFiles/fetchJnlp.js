@@ -8,35 +8,33 @@ var IndexedDb = minimongo.IndexedDb;
  * If its from the wep page i.e. launchData.referrerUrl is true, remove previous
  * collection from DB to initiate new download else just return Jnlp URL
  */
-var fetchJnlp = function(launchData, jnlpURL, cbFetchJnlp) {
-  new IndexedDb({namespace: "mydb"}, function(db) {
-    if(launchData.source === "url_handler") {
-      db.removeCollection("tciaSchema", function(){
-        db.addCollection("tciaSchema", function() {
+var fetchJnlp = function (launchData, jnlpURL, cbFetchJnlp) {
+  new IndexedDb({namespace: 'mydb'}, function (db) { // eslint-disable-line no-new
+    if (launchData.source === 'url_handler') {
+      db.removeCollection('tciaSchema', function () {
+        db.addCollection('tciaSchema', function () {
           db.tciaSchema.upsert({
-            '_id': "jnlpInfo",
+            '_id': 'jnlpInfo',
             'jnlpURL': jnlpURL
-          }, function() {
+          }, function () {
             cbFetchJnlp(null, jnlpURL);
           });
         });
       });
-    }
-    else {
-      db.addCollection("tciaSchema", function() {
-        db.tciaSchema.findOne({'_id': "jnlpInfo"}, {}, function(jnlpExist) {
-          if(jnlpExist) {
+    } else {
+      db.addCollection('tciaSchema', function () {
+        db.tciaSchema.findOne({'_id': 'jnlpInfo'}, {}, function (jnlpExist) {
+          if (jnlpExist) {
             cbFetchJnlp(null, jnlpExist.jnlpURL);
-          }
-          else {
-            cbFetchJnlp("Error", null);
+          } else {
+            cbFetchJnlp('Error', null);
           }
         });
       });
     }
-  }, function(err) {
+  }, function (err) {
     console.log(err);
   });
-}
+};
 
 module.exports.fetchJnlp = fetchJnlp;

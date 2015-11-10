@@ -1,7 +1,7 @@
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.bundle = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 // Required Node Packages
 var async = require('async');
-var minimongo = require("minimongo");
+var minimongo = require('minimongo');
 
 var IndexedDb = minimongo.IndexedDb;
 
@@ -10,11 +10,11 @@ var IndexedDb = minimongo.IndexedDb;
  * study folder in parallel and upsert series document in DB maintaining
  * 'fsPath'(folder entry for a particular series)
  */
-var createSeriesFolder = function(db, entry, series, cbCreateSeriesFolder) {
-  async.each(series, function(seriesItem, cbSeries) {
-    db.tciaSchema.findOne({'seriesUIDShort': seriesItem}, {}, function(doc) {
-      var seriesDirname = (seriesItem[0] == "." ? seriesItem.slice(-7) : seriesItem);
-      entry.getDirectory(seriesDirname, {create:true}, function(entry) {
+var createSeriesFolder = function (db, entry, series, cbCreateSeriesFolder) {
+  async.each(series, function (seriesItem, cbSeries) {
+    db.tciaSchema.findOne({'seriesUIDShort': seriesItem}, {}, function (doc) {
+      var seriesDirname = (seriesItem[0] === '.' ? seriesItem.slice(-7) : seriesItem);
+      entry.getDirectory(seriesDirname, {create: true}, function (entry) {
         db.tciaSchema.upsert({
           '_id': doc._id,
           'type': doc.type,
@@ -27,102 +27,102 @@ var createSeriesFolder = function(db, entry, series, cbCreateSeriesFolder) {
           'downloadStatus': 0,
           'downloadedSize': 0,
           'files': []
-        }, function() {
+        }, function () {
           cbSeries();
         });
       });
     });
-  }, function(errSeries) {
-    if(!errSeries)  cbCreateSeriesFolder();
+  }, function (errSeries) {
+    if (!errSeries) cbCreateSeriesFolder();
   });
-}
+};
 
 /*
  * For each study of a particular patient, create studyUID's folder within that
  * patient's folder in parallel and call createSeriesFolder()
  */
-var createStudiesFolder = function(db, entry, studies, cbCreateStudiesFolder) {
-  async.each(studies, function(study, cbStudy) {
-    var studyDirname = (study[0] == "." ? study.slice(-7) : study);
-    entry.getDirectory(studyDirname, {create:true}, function(entry) {
-      db.tciaSchema.findOne({'studyUID': study}, {}, function(doc) {
-        createSeriesFolder(db, entry, doc.series, function(){
+var createStudiesFolder = function (db, entry, studies, cbCreateStudiesFolder) {
+  async.each(studies, function (study, cbStudy) {
+    var studyDirname = (study[0] === '.' ? study.slice(-7) : study);
+    entry.getDirectory(studyDirname, {create: true}, function (entry) {
+      db.tciaSchema.findOne({'studyUID': study}, {}, function (doc) {
+        createSeriesFolder(db, entry, doc.series, function () {
           cbStudy();
         });
       });
     });
-  }, function(errStudy) {
-    if(!errStudy)  cbCreateStudiesFolder();
+  }, function (errStudy) {
+    if (!errStudy) cbCreateStudiesFolder();
   });
-}
+};
 
 /*
  * For each patient in a particular collection, create patient's folder within
  * that collection's folder in parallel and call createStudiesFolder()
  */
-var createPatientsFolder = function(db, entry, patients, cbCreatePatientsFolder) {
-  async.each(patients, function(patient, cbPatient) {
-    entry.getDirectory(patient, {create:true}, function(entry) {
-        db.tciaSchema.findOne({'patientID': patient}, {}, function(doc) {
-          createStudiesFolder(db, entry, doc.studies, function(){
-            cbPatient();
-          });
+var createPatientsFolder = function (db, entry, patients, cbCreatePatientsFolder) {
+  async.each(patients, function (patient, cbPatient) {
+    entry.getDirectory(patient, {create: true}, function (entry) {
+      db.tciaSchema.findOne({'patientID': patient}, {}, function (doc) {
+        createStudiesFolder(db, entry, doc.studies, function () {
+          cbPatient();
         });
+      });
     });
-  }, function(errPatient) {
-    if(!errPatient)  cbCreatePatientsFolder();
+  }, function (errPatient) {
+    if (!errPatient) cbCreatePatientsFolder();
   });
-}
+};
 
 /*
  * For each collection in DB, create collection's folder within the user's
  * chosen directory in parallel and call createPatientsFolder()
  */
-var createCollectionsFolder = function(db, theEntry, collections, cbCreateCollectionFolder) {
-  async.each(collections, function(collection, cbCollection) {
-    chrome.fileSystem.getWritableEntry(theEntry, function(entry) {
-      entry.getDirectory(collection._id, {create:true}, function(entry) {
-        db.tciaSchema.findOne({'collection': collection._id}, {}, function(doc) {
-          createPatientsFolder(db, entry, doc.patients, function(){
+var createCollectionsFolder = function (db, theEntry, collections, cbCreateCollectionFolder) {
+  async.each(collections, function (collection, cbCollection) {
+    chrome.fileSystem.getWritableEntry(theEntry, function (entry) {
+      entry.getDirectory(collection._id, {create: true}, function (entry) {
+        db.tciaSchema.findOne({'collection': collection._id}, {}, function (doc) {
+          createPatientsFolder(db, entry, doc.patients, function () {
             cbCollection();
           });
         });
       });
     });
-  }, function(errCollection) {
-    if(!errCollection)  cbCreateCollectionFolder();
+  }, function (errCollection) {
+    if (!errCollection) cbCreateCollectionFolder();
   });
-}
+};
 
 /*
  * Upsert 'chosenDirFolder' in DB and create folders within user's chosen
  * directory with appropriate hirarchy viz.,
  * "collection > patientID > studyUID > seriesUID" for each of the entries
  */
-var createFolderHierarchy = function(theEntry, cbCreateFolderHierarchy) {
-  new IndexedDb({namespace: "mydb"}, function(db) {
-    db.addCollection("tciaSchema", function() {
+var createFolderHierarchy = function (theEntry, cbCreateFolderHierarchy) {
+  new IndexedDb({namespace: 'mydb'}, function (db) { // eslint-disable-line  no-new
+    db.addCollection('tciaSchema', function () {
       db.tciaSchema.upsert({
-        '_id': "chosenDir",
-        'chosenDirFolder': chrome.fileSystem.retainEntry(theEntry),
-      }, function() {
-        db.tciaSchema.find({'type': "collection"}).fetch(function(collections) {
-          createCollectionsFolder(db, theEntry, collections, function() {
+        '_id': 'chosenDir',
+        'chosenDirFolder': chrome.fileSystem.retainEntry(theEntry)
+      }, function () {
+        db.tciaSchema.find({'type': 'collection'}).fetch(function (collections) {
+          createCollectionsFolder(db, theEntry, collections, function () {
             db.tciaSchema.upsert({
-              '_id': "createFolderHierarchyInfo",
+              '_id': 'createFolderHierarchyInfo',
               'createFolderHierarchyFlag': true
-            }, function() {
+            }, function () {
               cbCreateFolderHierarchy();
             });
           });
         });
       });
     });
-  }, function(err) {
+  }, function (err) {
     console.log(err);
     cbCreateFolderHierarchy(err);
   });
-}
+};
 
 module.exports.createFolderHierarchy = createFolderHierarchy;
 
@@ -130,65 +130,65 @@ module.exports.createFolderHierarchy = createFolderHierarchy;
 // Required Node Packages
 var async = require('async');
 
+/* global output, manifestSchema, jnlpUserId, jnlpPassword,
+   jnlpIncludeAnnotation */
+
 /*
  * Takes restoreStateSchema, restoreStateFolder as arguments for processing
  * states accordingly. Execution steps include storeSchema,
  * createFolderHierarchy, initDownloadMgr
  */
-var execute = function(restoreStateSchema, restoreStateFolder, saveChooseDirEntry, cbExecute) {
+var execute = function (restoreStateSchema, restoreStateFolder, saveChooseDirEntry, cbExecute) {
   async.series({
     // Stores schema if not previously stored
-    storeSchema: function(callback) {
-      console.log("execute.storeSchema ..");
-      if(!restoreStateSchema) {
-        console.log("Saving Manifest Schema ..");
-        output.innerHTML = "Initializing database ... (May take upto 5 minutes for huge downloads)";
-        bundle.storeSchema(manifestSchema, function(errStoreSchema) {
+    storeSchema: function (callback) {
+      console.log('execute.storeSchema ..');
+      if (!restoreStateSchema) {
+        console.log('Saving Manifest Schema ..');
+        output.innerHTML = 'Initializing database ... (May take upto 5 minutes for huge downloads)';
+        bundle.storeSchema(manifestSchema, function (errStoreSchema) {
           callback(errStoreSchema, null);
         });
-      }
-      else {
+      } else {
         callback(null, null);
       }
     },
     // Creates folder hierarchy if not previously created
-    createFolderHierarchy: function(callback) {
-      console.log("execute.createFolderHierarchy ..");
-      if(!restoreStateFolder) {
-        console.log("Creating Folder hierarchy ...");
-        if(restoreStateSchema) {
-          output.innerHTML = "Database initialized already. Creating folders ...";
+    createFolderHierarchy: function (callback) {
+      console.log('execute.createFolderHierarchy ..');
+      if (!restoreStateFolder) {
+        console.log('Creating Folder hierarchy ...');
+        if (restoreStateSchema) {
+          output.innerHTML = 'Database initialized already. Creating folders ...';
+        } else if (!restoreStateSchema) {
+          output.innerHTML = 'Creating folders ...';
         }
-        else if(!restoreStateSchema) {
-          output.innerHTML = "Creating folders ...";
-        }
-        bundle.createFolderHierarchy(saveChooseDirEntry, function() {
-          console.log("Folder hierarchy created successfully");
+        bundle.createFolderHierarchy(saveChooseDirEntry, function () {
+          console.log('Folder hierarchy created successfully');
           callback(null, null);
         });
-      }    
-      else {
+      } else {
         callback(null, null);
       }
     },
     // Summons initDownloadMgr() with required Jnlp arguments
-    initDownloadMgr: function(callback) {
-      console.log("execute.initDownloadMgr ..");
-      if(!restoreStateSchema && !restoreStateFolder) {
-        output.innerHTML = "Download started ...";
+    initDownloadMgr: function (callback) {
+      console.log('execute.initDownloadMgr ..');
+      if (!restoreStateSchema && !restoreStateFolder) {
+        output.innerHTML = 'Download started ...';
       }
       bundle.initDownloadMgr(jnlpUserId, jnlpPassword, jnlpIncludeAnnotation,
-          function(errInitFunction) {
+          function (errInitFunction) {
             if (!errInitFunction) {
               callback(errInitFunction, null);
             }
           });
     }
   },
-  function(err, results) {
+  function (err, results) {
     cbExecute(err);
   });
-}
+};
 
 module.exports.execute = execute;
 
@@ -203,36 +203,34 @@ var IndexedDb = minimongo.IndexedDb;
  * If its from the wep page i.e. launchData.referrerUrl is true, remove previous
  * collection from DB to initiate new download else just return Jnlp URL
  */
-var fetchJnlp = function(launchData, jnlpURL, cbFetchJnlp) {
-  new IndexedDb({namespace: "mydb"}, function(db) {
-    if(launchData.source === "url_handler") {
-      db.removeCollection("tciaSchema", function(){
-        db.addCollection("tciaSchema", function() {
+var fetchJnlp = function (launchData, jnlpURL, cbFetchJnlp) {
+  new IndexedDb({namespace: 'mydb'}, function (db) { // eslint-disable-line no-new
+    if (launchData.source === 'url_handler') {
+      db.removeCollection('tciaSchema', function () {
+        db.addCollection('tciaSchema', function () {
           db.tciaSchema.upsert({
-            '_id': "jnlpInfo",
+            '_id': 'jnlpInfo',
             'jnlpURL': jnlpURL
-          }, function() {
+          }, function () {
             cbFetchJnlp(null, jnlpURL);
           });
         });
       });
-    }
-    else {
-      db.addCollection("tciaSchema", function() {
-        db.tciaSchema.findOne({'_id': "jnlpInfo"}, {}, function(jnlpExist) {
-          if(jnlpExist) {
+    } else {
+      db.addCollection('tciaSchema', function () {
+        db.tciaSchema.findOne({'_id': 'jnlpInfo'}, {}, function (jnlpExist) {
+          if (jnlpExist) {
             cbFetchJnlp(null, jnlpExist.jnlpURL);
-          }
-          else {
-            cbFetchJnlp("Error", null);
+          } else {
+            cbFetchJnlp('Error', null);
           }
         });
       });
     }
-  }, function(err) {
+  }, function (err) {
     console.log(err);
   });
-}
+};
 
 module.exports.fetchJnlp = fetchJnlp;
 
@@ -246,57 +244,56 @@ var IndexedDb = minimongo.IndexedDb;
 /*
  * Executes deleteRemovedSeries, storeSchemaFlag, createFolderHierarchyFlag
  */
-var restoreState = function(cbRestoreState) {
-  new IndexedDb({namespace: "mydb"}, function(db) {
-    db.addCollection("tciaSchema", function() {
-      async.parallel( {
+var restoreState = function (cbRestoreState) {
+  new IndexedDb({namespace: 'mydb'}, function (db) { // eslint-disable-line no-new
+    db.addCollection('tciaSchema', function () {
+      async.parallel({
         // Adds 'toRemove' class to seriesArray elements and deletes them
-        deleteRemovedSeries: function(callback) {
-          db.tciaSchema.findOne({'_id': "removedSeries"}, {}, function(doc) {
-            if(doc && doc.seriesArray.length) {
-              async.each(doc.seriesArray, function(item, cbItem){
-                $("[id='row_"+item + "']").addClass("toRemove");
+        deleteRemovedSeries: function (callback) {
+          db.tciaSchema.findOne({'_id': 'removedSeries'}, {}, function (doc) {
+            if (doc && doc.seriesArray.length) {
+              async.each(doc.seriesArray, function (item, cbItem) {
+                $("[id='row_" + item + "']").addClass('toRemove');
                 cbItem();
-              }, function(err) {
+              }, function (err) { // eslint-disable-line handle-callback-err
                 dTable.rows('.toRemove').remove().draw();
                 callback(null, null);
               });
-            }            
-            else callback(null, null);
+            } else {
+              callback(null, null);
+            }
           });
         },
         // returns storeSchemaFlag if schemaExist
-        storeSchemaFlag: function(callback) {
-          db.tciaSchema.findOne({'_id': "storeSchemaInfo"}, {}, function(schemaExist) {
-            if(!schemaExist) {
+        storeSchemaFlag: function (callback) {
+          db.tciaSchema.findOne({'_id': 'storeSchemaInfo'}, {}, function (schemaExist) {
+            if (!schemaExist) {
               callback(null, 0);
-            }
-            else {
+            } else {
               callback(null, 1);
             }
           });
         },
         // returns createFolderHierarchyFlag if folderHierarchyExist
-        createFolderHierarchyFlag: function(callback) {
-          db.tciaSchema.findOne({'_id': "createFolderHierarchyInfo"}, {}, function(folderHierarchyExist) {
-            if(!folderHierarchyExist) {              
+        createFolderHierarchyFlag: function (callback) {
+          db.tciaSchema.findOne({'_id': 'createFolderHierarchyInfo'}, {}, function (folderHierarchyExist) {
+            if (!folderHierarchyExist) {
               callback(null, 0);
-            }
-            else {
+            } else {
               callback(null, 1);
             }
           });
         }
       },
-      function(err, results) {
+      function (err, results) { // eslint-disable-line handle-callback-err
         // results: {storeSchemaFlag: 0/1, createFolderHierarchyFlag: 0/1}
         cbRestoreState(results);
       });
-    }, function(err) {
+    }, function (err) {
       console.log(err);
     });
   });
-}
+};
 
 module.exports.restoreState = restoreState;
 
@@ -310,263 +307,252 @@ var IndexedDb = minimongo.IndexedDb;
 /*
  * Appends 'patientID' to 'patients' array
  */
-var addPatientID = function(db, collection, patientID, cbAddPatientID) {
-  db.tciaSchema.findOne({'collection': collection}, {}, function(doc) {
+var addPatientID = function (db, collection, patientID, cbAddPatientID) {
+  db.tciaSchema.findOne({'collection': collection}, {}, function (doc) {
     var patients = doc.patients.concat([patientID]);
     db.tciaSchema.upsert({
       '_id': collection,
-      'type': "collection",
+      'type': 'collection',
       'collection': collection,
       'patients': patients
-    }, function() {
+    }, function () {
       cbAddPatientID(null);
     });
-  })
-}
+  });
+};
 
 /*
  * Inserts 'collection' document if not already inserted
  * Calls addPatientID for adding 'patientID' to 'patients' array
  */
-var insertCollectionTable = function(db, manifest, cbInsertCollectionTable) {
-  var collection = manifest[0],
-  patientID = manifest[1];
+var insertCollectionTable = function (db, manifest, cbInsertCollectionTable) {
+  var collection = manifest[0];
+  var patientID = manifest[1];
 
-  db.tciaSchema.findOne({'collection': collection}, {}, function(colExist) {
-    if(!colExist) {
+  db.tciaSchema.findOne({'collection': collection}, {}, function (colExist) {
+    if (!colExist) {
       db.tciaSchema.upsert({
         '_id': collection,
-        'type': "collection",
+        'type': 'collection',
         'collection': collection,
         'patients': []
-      }, function() {
-        addPatientID(db, collection, patientID, function(db) {
+      }, function () {
+        addPatientID(db, collection, patientID, function (db) {
           cbInsertCollectionTable(null);
         });
       });
-    }
-    else if (colExist.patients.indexOf(patientID) == -1) {
-      addPatientID(db, collection, patientID, function(db) {
+    } else if (colExist.patients.indexOf(patientID) === -1) {
+      addPatientID(db, collection, patientID, function (db) {
         cbInsertCollectionTable(null);
       });
-    }
-    else cbInsertCollectionTable(null);
+    } else cbInsertCollectionTable(null);
   });
-}
+};
 
 /*
  * Appends 'studyUID' to 'studies' array
  */
-var addStudyUID = function(db, patientID, studyUID, cbAddStudyUID) {
-  db.tciaSchema.findOne({'patientID': patientID}, {}, function(doc) {
+var addStudyUID = function (db, patientID, studyUID, cbAddStudyUID) {
+  db.tciaSchema.findOne({'patientID': patientID}, {}, function (doc) {
     var studies = doc.studies.concat([studyUID]);
     db.tciaSchema.upsert({
       '_id': patientID,
       'patientID': patientID,
       'studies': studies
-    }, function() {
+    }, function () {
       cbAddStudyUID(null);
     });
-  })
-}
+  });
+};
 
 /*
  * Inserts 'patient' document if not already inserted
  * Calls addStudyUID() for adding 'studyUID' to 'studies' array
  */
-var insertPatientTable = function(db, manifest, cbInsertPatientTable) {
-  var patientID = manifest[1],
-  studyUID = manifest[2].slice(-8);
+var insertPatientTable = function (db, manifest, cbInsertPatientTable) {
+  var patientID = manifest[1];
+  var studyUID = manifest[2].slice(-8);
 
-  db.tciaSchema.findOne({'patientID': patientID}, {}, function(patientExist) {
-    if(!patientExist) {
+  db.tciaSchema.findOne({'patientID': patientID}, {}, function (patientExist) {
+    if (!patientExist) {
       db.tciaSchema.upsert({
         '_id': patientID,
         'patientID': patientID,
         'studies': []
-      }, function() {
-        addStudyUID(db, patientID, studyUID, function(db) {
+      }, function () {
+        addStudyUID(db, patientID, studyUID, function (db) {
           cbInsertPatientTable(null);
         });
       });
-    }
-    else if (patientExist.studies.indexOf(studyUID) == -1) {
-      addStudyUID(db, patientID, studyUID, function(db) {
+    } else if (patientExist.studies.indexOf(studyUID) === -1) {
+      addStudyUID(db, patientID, studyUID, function (db) {
         cbInsertPatientTable(null);
       });
-    }
-    else cbInsertPatientTable(null);
+    } else cbInsertPatientTable(null);
   });
-}
+};
 
 /*
  * Inserts 'series' document along with it's attributes if not already inserted
  */
-var insertSeriesTable = function(db, seriesUID, manifest, cbInsertSeriesTable) {
-  db.tciaSchema.findOne({'seriesUID': seriesUID}, {}, function(seriesExist) {
-    if(!seriesExist) {
-      var seriesUIDShort = seriesUID.slice(-8),
-      hasAnnotation = manifest[4],
-      numberDCM = manifest[5],
-      size = Math.round((((parseInt(manifest[6]) + parseInt(manifest[7]))*1.0)/1024/1024)*100)/100;
-      var hasAnnotationBool = (hasAnnotation == "Yes" ? "true" : "false");
+var insertSeriesTable = function (db, seriesUID, manifest, cbInsertSeriesTable) {
+  db.tciaSchema.findOne({'seriesUID': seriesUID}, {}, function (seriesExist) {
+    if (!seriesExist) {
+      var seriesUIDShort = seriesUID.slice(-8);
+      var hasAnnotation = manifest[4];
+      var numberDCM = manifest[5];
+      var size = Math.round((((parseInt(manifest[6], 10) + parseInt(manifest[7], 10)) * 1.0) / 1024 / 1024) * 100) / 100;
+      var hasAnnotationBool = (hasAnnotation === 'Yes' ? 'true' : 'false');
       db.tciaSchema.upsert({
         '_id': seriesUID,
-        'type': "seriesDetails",
+        'type': 'seriesDetails',
         'seriesUID': seriesUID,
         'seriesUIDShort': seriesUIDShort,
         'hasAnnotation': hasAnnotationBool,
         'numberDCM': numberDCM,
         'size': size
-      }, function() {
-          cbInsertSeriesTable(null);
+      }, function () {
+        cbInsertSeriesTable(null);
       });
-    }
-    else cbInsertSeriesTable(null);
+    } else cbInsertSeriesTable(null);
   });
-}
+};
 
 /*
  * Appends 'seriesUID' (seriesUIDShort i.e. last 8 characters) to 'series' array
  */
-var addSeriesUID = function(db, studyUID, seriesUID, manifest, cbAddSeriesUID) {
-  db.tciaSchema.findOne({'studyUID': studyUID}, {}, function(doc) {
+var addSeriesUID = function (db, studyUID, seriesUID, manifest, cbAddSeriesUID) {
+  db.tciaSchema.findOne({'studyUID': studyUID}, {}, function (doc) {
     var series = doc.series.concat([seriesUID.slice(-8)]);
     db.tciaSchema.upsert({
       '_id': studyUID,
       'studyUID': studyUID,
       'series': series
-    }, function() {
-      insertSeriesTable(db, seriesUID, manifest, function(errInsertSeriesTable) {
+    }, function () {
+      insertSeriesTable(db, seriesUID, manifest, function (errInsertSeriesTable) {
         cbAddSeriesUID(null);
       });
     });
-  })
-}
+  });
+};
 
 /*
  * Inserts 'study' document if not already inserted
  * Calls addSeriesUID() for adding 'seriesUID' to 'series' array
  */
-var insertStudyTable = function(db, manifest, cbInsertStudyTable) {
-  var studyUID = manifest[2].slice(-8),
-  seriesUID = manifest[3];
+var insertStudyTable = function (db, manifest, cbInsertStudyTable) {
+  var studyUID = manifest[2].slice(-8);
+  var seriesUID = manifest[3];
 
-  db.tciaSchema.findOne({'studyUID': studyUID}, {}, function(studyExist) {
-    if(!studyExist) {
+  db.tciaSchema.findOne({'studyUID': studyUID}, {}, function (studyExist) {
+    if (!studyExist) {
       db.tciaSchema.upsert({
         '_id': studyUID,
         'studyUID': studyUID,
         'series': []
-      }, function() {
-        addSeriesUID(db, studyUID, seriesUID, manifest, function(db) {
+      }, function () {
+        addSeriesUID(db, studyUID, seriesUID, manifest, function (db) {
           cbInsertStudyTable(null);
         });
       });
-    }
-    else if (studyExist.series.indexOf(seriesUID) == -1) {
-      addSeriesUID(db, studyUID, seriesUID, manifest, function(db) {
+    } else if (studyExist.series.indexOf(seriesUID) === -1) {
+      addSeriesUID(db, studyUID, seriesUID, manifest, function (db) {
         cbInsertStudyTable(null);
       });
-    }
-    else cbInsertStudyTable(null);
+    } else cbInsertStudyTable(null);
   });
-}
+};
 
 /*
- * Takes manifest schema as an argument and inserts appropriate documents for 
+ * Takes manifest schema as an argument and inserts appropriate documents for
  * collection, patient, study, series in 'tciaSchema' Minimongo collection
  */
-var storeSchema = function(schema, cbStoreSchema) {
+var storeSchema = function (schema, cbStoreSchema) {
   var manifestLen = schema.length;
-  console.log("Total manifest splits " + manifestLen);
-  new IndexedDb({namespace: "mydb"}, function(db) {
-    db.addCollection("tciaSchema", function() {
-      db.tciaSchema.findOne({'_id': "removedSeries"}, {}, function(doc) {
+  console.log('Total manifest splits ' + manifestLen);
+  new IndexedDb({namespace: 'mydb'}, function (db) { // eslint-disable-line no-new
+    db.addCollection('tciaSchema', function () {
+      db.tciaSchema.findOne({'_id': 'removedSeries'}, {}, function (doc) {
         var removedSeries = [];
-        if(doc && doc.seriesArray.length)
+        if (doc && doc.seriesArray.length) {
           removedSeries = doc.seriesArray;
-        async.eachSeries(schema, function(manifest, cbManifest){
-          manifest = manifest.split("|");
+        }
+        async.eachSeries(schema, function (manifest, cbManifest) {
+          manifest = manifest.split('|');
           // If this series is not in removedSeries array then insert in DB
-          if(removedSeries.indexOf(manifest[3].slice(-8)) == -1) {
-            insertCollectionTable(db, manifest, function(errInsertCollectionTable) {
-              insertPatientTable(db, manifest, function(errInsertPatientTable) {
-                insertStudyTable(db, manifest, function(errInsertStudyTable) {
+          if (removedSeries.indexOf(manifest[3].slice(-8)) === -1) {
+            insertCollectionTable(db, manifest, function (errInsertCollectionTable) {
+              insertPatientTable(db, manifest, function (errInsertPatientTable) {
+                insertStudyTable(db, manifest, function (errInsertStudyTable) {
                   cbManifest();
                 });
               });
             });
-          }
-          else
-            cbManifest();
-        }, function(errManifest) {
-          if(!errManifest) {
+          } else cbManifest();
+        }, function (errManifest) {
+          if (!errManifest) {
             // Set the 'storeSchemaFlag' for restoring state of the application
             db.tciaSchema.upsert({
-              '_id': "storeSchemaInfo",
+              '_id': 'storeSchemaInfo',
               'storeSchemaFlag': true
-            }, function() {
+            }, function () {
               console.log('TCIA Manifest schema successfully stored');
               cbStoreSchema(null);
             });
-          }
-          else {
+          } else {
             cbStoreSchema(errManifest);
           }
         });
       });
     });
-  }, function(err) {
+  }, function (err) {
     console.log(err);
     cbStoreSchema(err);
   });
-}
+};
 
 module.exports.storeSchema = storeSchema;
 
 },{"async":7,"minimongo":8}],6:[function(require,module,exports){
 // Required Node Packages
-var async = require('async'),
-    minimongo = require('minimongo');
+var async = require('async');
+var minimongo = require('minimongo');
 
 var IndexedDb = minimongo.IndexedDb;
 
 /*
  * Add row IDs to seriesArray maintaining stats of the series delete by user
  */
-var updateRows = function(rownodes, cbUpdateRows) {
-  new IndexedDb({namespace: "mydb"}, function(db) {
-    db.addCollection("tciaSchema", function() {
-      if(rownodes) {
+var updateRows = function (rownodes, cbUpdateRows) {
+  new IndexedDb({namespace: 'mydb'}, function (db) { // eslint-disable-line no-new
+    db.addCollection('tciaSchema', function () {
+      if (rownodes) {
         var removedSeries = [];
-        async.each(rownodes, function(row, cbRow) {
-          console.log(row.id.split("_")[1]);
-          removedSeries.push(row.id.split("_")[1]);
+        async.each(rownodes, function (row, cbRow) {
+          console.log(row.id.split('_')[1]);
+          removedSeries.push(row.id.split('_')[1]);
           cbRow();
-        }, function(err) {
-          db.tciaSchema.findOne({'_id': "removedSeries"}, {}, function(doc) {
-            console.log("removedSeries");
-            if(doc && doc.seriesArray) {
+        }, function (err) { // eslint-disable-line handle-callback-err
+          db.tciaSchema.findOne({'_id': 'removedSeries'}, {}, function (doc) {
+            console.log('removedSeries');
+            if (doc && doc.seriesArray) {
               removedSeries = Array.prototype.concat.apply([], [removedSeries, doc.seriesArray]);
             }
             console.log(removedSeries);
             db.tciaSchema.upsert({
-              '_id': "removedSeries",
+              '_id': 'removedSeries',
               'seriesArray': removedSeries
-            }, function() {
+            }, function () {
               cbUpdateRows();
             });
           });
         });
-      }
-      else
-        cbUpdateRows();
+      } else cbUpdateRows();
     });
-  }, function(err) {
+  }, function (err) {
     console.log(err);
   });
-}
+};
 
 module.exports.updateRows = updateRows;
 
@@ -1761,7 +1747,7 @@ module.exports.updateRows = updateRows;
 }());
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"_process":57}],8:[function(require,module,exports){
+},{"_process":56}],8:[function(require,module,exports){
 exports.MemoryDb = require('./lib/MemoryDb');
 exports.LocalStorageDb = require('./lib/LocalStorageDb');
 exports.IndexedDb = require('./lib/IndexedDb');
@@ -6084,7 +6070,7 @@ exports.regularizeUpsert = function(docs, bases, success, error) {
 }());
 
 }).call(this,require('_process'))
-},{"_process":57}],20:[function(require,module,exports){
+},{"_process":56}],20:[function(require,module,exports){
 /*!
   * Bowser - a browser detector
   * https://github.com/ded/bowser
@@ -23958,7 +23944,7 @@ Extract.prototype._write = function(data, enc, cb) {
 
 module.exports = Extract
 
-},{"./headers":25,"bl":27,"readable-stream":41,"util":77,"xtend":42}],25:[function(require,module,exports){
+},{"./headers":25,"bl":27,"readable-stream":41,"util":76,"xtend":42}],25:[function(require,module,exports){
 (function (Buffer){
 var ZEROS = '0000000000000000000'
 var ZERO_OFFSET = '0'.charCodeAt(0)
@@ -24417,7 +24403,7 @@ BufferList.prototype.destroy = function () {
 module.exports = BufferList
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":45,"readable-stream/duplex":31,"util":77}],28:[function(require,module,exports){
+},{"buffer":45,"readable-stream/duplex":31,"util":76}],28:[function(require,module,exports){
 var once = require('once');
 
 var noop = function() {};
@@ -24655,7 +24641,7 @@ function forEach (xs, f) {
 }
 
 }).call(this,require('_process'))
-},{"./_stream_readable":34,"./_stream_writable":36,"_process":57,"core-util-is":37,"inherits":38}],33:[function(require,module,exports){
+},{"./_stream_readable":34,"./_stream_writable":36,"_process":56,"core-util-is":37,"inherits":38}],33:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -25689,7 +25675,7 @@ function indexOf (xs, x) {
 }
 
 }).call(this,require('_process'))
-},{"_process":57,"buffer":45,"core-util-is":37,"events":49,"inherits":38,"isarray":39,"stream":73,"string_decoder/":40}],35:[function(require,module,exports){
+},{"_process":56,"buffer":45,"core-util-is":37,"events":49,"inherits":38,"isarray":39,"stream":72,"string_decoder/":40}],35:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -26291,7 +26277,7 @@ function endWritable(stream, state, cb) {
 }
 
 }).call(this,require('_process'))
-},{"./_stream_duplex":32,"_process":57,"buffer":45,"core-util-is":37,"inherits":38,"stream":73}],37:[function(require,module,exports){
+},{"./_stream_duplex":32,"_process":56,"buffer":45,"core-util-is":37,"inherits":38,"stream":72}],37:[function(require,module,exports){
 (function (Buffer){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -26664,7 +26650,7 @@ exports.Duplex = require('./lib/_stream_duplex.js');
 exports.Transform = require('./lib/_stream_transform.js');
 exports.PassThrough = require('./lib/_stream_passthrough.js');
 
-},{"./lib/_stream_duplex.js":32,"./lib/_stream_passthrough.js":33,"./lib/_stream_readable.js":34,"./lib/_stream_transform.js":35,"./lib/_stream_writable.js":36,"stream":73}],42:[function(require,module,exports){
+},{"./lib/_stream_duplex.js":32,"./lib/_stream_passthrough.js":33,"./lib/_stream_readable.js":34,"./lib/_stream_transform.js":35,"./lib/_stream_writable.js":36,"stream":72}],42:[function(require,module,exports){
 module.exports = extend
 
 function extend() {
@@ -26881,7 +26867,7 @@ Pack.prototype._read = function(n) {
 module.exports = Pack
 
 }).call(this,require('_process'),require("buffer").Buffer)
-},{"./headers":25,"_process":57,"buffer":45,"end-of-stream":28,"readable-stream":41,"util":77}],44:[function(require,module,exports){
+},{"./headers":25,"_process":56,"buffer":45,"end-of-stream":28,"readable-stream":41,"util":76}],44:[function(require,module,exports){
 
 },{}],45:[function(require,module,exports){
 /*!
@@ -28995,7 +28981,7 @@ http.STATUS_CODES = {
     510 : 'Not Extended',               // RFC 2774
     511 : 'Network Authentication Required' // RFC 6585
 };
-},{"./lib/request":51,"events":49,"url":75}],51:[function(require,module,exports){
+},{"./lib/request":51,"events":49,"url":74}],51:[function(require,module,exports){
 var Stream = require('stream');
 var Response = require('./response');
 var Base64 = require('Base64');
@@ -29206,7 +29192,7 @@ var isXHR2Compatible = function (obj) {
     if (typeof FormData !== 'undefined' && obj instanceof FormData) return true;
 };
 
-},{"./response":52,"Base64":53,"inherits":55,"stream":73}],52:[function(require,module,exports){
+},{"./response":52,"Base64":53,"inherits":54,"stream":72}],52:[function(require,module,exports){
 var Stream = require('stream');
 var util = require('util');
 
@@ -29328,7 +29314,7 @@ var isArray = Array.isArray || function (xs) {
     return Object.prototype.toString.call(xs) === '[object Array]';
 };
 
-},{"stream":73,"util":77}],53:[function(require,module,exports){
+},{"stream":72,"util":76}],53:[function(require,module,exports){
 ;(function () {
 
   var object = typeof exports != 'undefined' ? exports : this; // #8: web workers
@@ -29391,25 +29377,10 @@ var isArray = Array.isArray || function (xs) {
 }());
 
 },{}],54:[function(require,module,exports){
-var http = require('http');
-
-var https = module.exports;
-
-for (var key in http) {
-    if (http.hasOwnProperty(key)) https[key] = http[key];
-};
-
-https.request = function (params, cb) {
-    if (!params) params = {};
-    params.scheme = 'https';
-    return http.request.call(this, params, cb);
-}
-
-},{"http":50}],55:[function(require,module,exports){
 arguments[4][38][0].apply(exports,arguments)
-},{"dup":38}],56:[function(require,module,exports){
+},{"dup":38}],55:[function(require,module,exports){
 arguments[4][39][0].apply(exports,arguments)
-},{"dup":39}],57:[function(require,module,exports){
+},{"dup":39}],56:[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -29501,7 +29472,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],58:[function(require,module,exports){
+},{}],57:[function(require,module,exports){
 (function (global){
 /*! https://mths.be/punycode v1.3.2 by @mathias */
 ;(function(root) {
@@ -30035,7 +30006,7 @@ process.umask = function() { return 0; };
 }(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],59:[function(require,module,exports){
+},{}],58:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -30121,7 +30092,7 @@ var isArray = Array.isArray || function (xs) {
   return Object.prototype.toString.call(xs) === '[object Array]';
 };
 
-},{}],60:[function(require,module,exports){
+},{}],59:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -30208,19 +30179,19 @@ var objectKeys = Object.keys || function (obj) {
   return res;
 };
 
-},{}],61:[function(require,module,exports){
+},{}],60:[function(require,module,exports){
 'use strict';
 
 exports.decode = exports.parse = require('./decode');
 exports.encode = exports.stringify = require('./encode');
 
-},{"./decode":59,"./encode":60}],62:[function(require,module,exports){
+},{"./decode":58,"./encode":59}],61:[function(require,module,exports){
 arguments[4][31][0].apply(exports,arguments)
-},{"./lib/_stream_duplex.js":63,"dup":31}],63:[function(require,module,exports){
+},{"./lib/_stream_duplex.js":62,"dup":31}],62:[function(require,module,exports){
 arguments[4][32][0].apply(exports,arguments)
-},{"./_stream_readable":65,"./_stream_writable":67,"_process":57,"core-util-is":68,"dup":32,"inherits":55}],64:[function(require,module,exports){
+},{"./_stream_readable":64,"./_stream_writable":66,"_process":56,"core-util-is":67,"dup":32,"inherits":54}],63:[function(require,module,exports){
 arguments[4][33][0].apply(exports,arguments)
-},{"./_stream_transform":66,"core-util-is":68,"dup":33,"inherits":55}],65:[function(require,module,exports){
+},{"./_stream_transform":65,"core-util-is":67,"dup":33,"inherits":54}],64:[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -31175,7 +31146,7 @@ function indexOf (xs, x) {
 }
 
 }).call(this,require('_process'))
-},{"./_stream_duplex":63,"_process":57,"buffer":45,"core-util-is":68,"events":49,"inherits":55,"isarray":56,"stream":73,"string_decoder/":74,"util":44}],66:[function(require,module,exports){
+},{"./_stream_duplex":62,"_process":56,"buffer":45,"core-util-is":67,"events":49,"inherits":54,"isarray":55,"stream":72,"string_decoder/":73,"util":44}],65:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -31386,7 +31357,7 @@ function done(stream, er) {
   return stream.push(null);
 }
 
-},{"./_stream_duplex":63,"core-util-is":68,"inherits":55}],67:[function(require,module,exports){
+},{"./_stream_duplex":62,"core-util-is":67,"inherits":54}],66:[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -31867,12 +31838,12 @@ function endWritable(stream, state, cb) {
 }
 
 }).call(this,require('_process'))
-},{"./_stream_duplex":63,"_process":57,"buffer":45,"core-util-is":68,"inherits":55,"stream":73}],68:[function(require,module,exports){
+},{"./_stream_duplex":62,"_process":56,"buffer":45,"core-util-is":67,"inherits":54,"stream":72}],67:[function(require,module,exports){
 arguments[4][37][0].apply(exports,arguments)
-},{"buffer":45,"dup":37}],69:[function(require,module,exports){
+},{"buffer":45,"dup":37}],68:[function(require,module,exports){
 module.exports = require("./lib/_stream_passthrough.js")
 
-},{"./lib/_stream_passthrough.js":64}],70:[function(require,module,exports){
+},{"./lib/_stream_passthrough.js":63}],69:[function(require,module,exports){
 exports = module.exports = require('./lib/_stream_readable.js');
 exports.Stream = require('stream');
 exports.Readable = exports;
@@ -31881,13 +31852,13 @@ exports.Duplex = require('./lib/_stream_duplex.js');
 exports.Transform = require('./lib/_stream_transform.js');
 exports.PassThrough = require('./lib/_stream_passthrough.js');
 
-},{"./lib/_stream_duplex.js":63,"./lib/_stream_passthrough.js":64,"./lib/_stream_readable.js":65,"./lib/_stream_transform.js":66,"./lib/_stream_writable.js":67,"stream":73}],71:[function(require,module,exports){
+},{"./lib/_stream_duplex.js":62,"./lib/_stream_passthrough.js":63,"./lib/_stream_readable.js":64,"./lib/_stream_transform.js":65,"./lib/_stream_writable.js":66,"stream":72}],70:[function(require,module,exports){
 module.exports = require("./lib/_stream_transform.js")
 
-},{"./lib/_stream_transform.js":66}],72:[function(require,module,exports){
+},{"./lib/_stream_transform.js":65}],71:[function(require,module,exports){
 module.exports = require("./lib/_stream_writable.js")
 
-},{"./lib/_stream_writable.js":67}],73:[function(require,module,exports){
+},{"./lib/_stream_writable.js":66}],72:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -32016,9 +31987,9 @@ Stream.prototype.pipe = function(dest, options) {
   return dest;
 };
 
-},{"events":49,"inherits":55,"readable-stream/duplex.js":62,"readable-stream/passthrough.js":69,"readable-stream/readable.js":70,"readable-stream/transform.js":71,"readable-stream/writable.js":72}],74:[function(require,module,exports){
+},{"events":49,"inherits":54,"readable-stream/duplex.js":61,"readable-stream/passthrough.js":68,"readable-stream/readable.js":69,"readable-stream/transform.js":70,"readable-stream/writable.js":71}],73:[function(require,module,exports){
 arguments[4][40][0].apply(exports,arguments)
-},{"buffer":45,"dup":40}],75:[function(require,module,exports){
+},{"buffer":45,"dup":40}],74:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -32727,14 +32698,14 @@ function isNullOrUndefined(arg) {
   return  arg == null;
 }
 
-},{"punycode":58,"querystring":61}],76:[function(require,module,exports){
+},{"punycode":57,"querystring":60}],75:[function(require,module,exports){
 module.exports = function isBuffer(arg) {
   return arg && typeof arg === 'object'
     && typeof arg.copy === 'function'
     && typeof arg.fill === 'function'
     && typeof arg.readUInt8 === 'function';
 }
-},{}],77:[function(require,module,exports){
+},{}],76:[function(require,module,exports){
 (function (process,global){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -33324,28 +33295,33 @@ function hasOwnProperty(obj, prop) {
 }
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./support/isBuffer":76,"_process":57,"inherits":55}],78:[function(require,module,exports){
+},{"./support/isBuffer":75,"_process":56,"inherits":54}],77:[function(require,module,exports){
 (function (Buffer){
 // Required Node Packages
-var http = require('http'),
-    https = require('https'),
-    async = require('async'),
-    tar = require('tar-stream'),
-    minimongo = require("minimongo");
+var http = require('http');
+var async = require('async');
+var tar = require('tar-stream');
+var minimongo = require('minimongo');
 
 var IndexedDb = minimongo.IndexedDb;
 
-var executeModule = require("./execute");
-var fetchJnlpModule = require("./fetchJnlp");
-var updateRowsModule = require("./updateRows");
-var storeSchemaModule = require("./storeSchema");
-var restoreStateModule = require("./restoreState");
-var createFolderHierarchyModule = require("./createFolderHierarchy");
+var executeModule = require('./execute');
+var fetchJnlpModule = require('./fetchJnlp');
+var updateRowsModule = require('./updateRows');
+var storeSchemaModule = require('./storeSchema');
+var restoreStateModule = require('./restoreState');
+var createFolderHierarchyModule = require('./createFolderHierarchy');
+
+/* global output */
+
+var errorHandler = function (e) {
+  console.error(e);
+};
 
 /*
  * Get URL contents viz., hostname, pathname, hash, etc
  */
-var parseURL = function(href) {
+var parseURL = function (href) {
   var match = href.match(/^(https?\:)\/\/(([^:\/?#]*)(?:\:([0-9]+))?)(\/[^?#]*)(\?[^#]*|)(#.*|)$/);
   return match && {
     protocol: match[1],
@@ -33355,48 +33331,48 @@ var parseURL = function(href) {
     pathname: match[5],
     search: match[6],
     hash: match[7]
-  }
-}
+  };
+};
 
 /*
  * Fetches and returns the seriesUID folder location from DB
  */
-var getSeriesUIDFolder = function(db, seriesUIDShort, cbGetSeriesUIDFolder) {
-  db.tciaSchema.findOne({'seriesUIDShort': seriesUIDShort}, {}, function(doc) {
-    if(doc && doc.fsPath){
-      chrome.fileSystem.isRestorable(doc.fsPath, function(IsRestorable) {
-        chrome.fileSystem.restoreEntry(doc.fsPath, function(seriesUIDEntry) {
+var getSeriesUIDFolder = function (db, seriesUIDShort, cbGetSeriesUIDFolder) {
+  db.tciaSchema.findOne({'seriesUIDShort': seriesUIDShort}, {}, function (doc) {
+    if (doc && doc.fsPath) {
+      chrome.fileSystem.isRestorable(doc.fsPath, function (IsRestorable) {
+        chrome.fileSystem.restoreEntry(doc.fsPath, function (seriesUIDEntry) {
           cbGetSeriesUIDFolder(seriesUIDEntry);
         });
       });
     }
     else cbGetSeriesUIDFolder(null);
   });
-}
+};
 
 /*
  * Writes content of blob to the writableEntry
  */
-var writeFileEntry = function(writableFileEntry, blob, cbWriteFileEntry) {
+var writeFileEntry = function (writableFileEntry, blob, cbWriteFileEntry) {
   if (!writableFileEntry) {
-    cbWriteFileEntry("Not a valid writableEntry");
+    cbWriteFileEntry('Not a valid writableEntry');
   }
 
-  writableFileEntry.createWriter(function(writer) {
+  writableFileEntry.createWriter(function (writer) {
     writer.onerror = errorHandler;
-    writer.onwriteend = function(){
-      writer.onwriteend = function(e){
+    writer.onwriteend = function () {
+      writer.onwriteend = function (e) {
         cbWriteFileEntry(null);
-      }
-    }
+      };
+    };
 
     writer.truncate(blob.size);
-    waitForIO(writer, function() {
+    waitForIO(writer, function () {
       writer.seek(0);
       writer.write(blob);
     });
   }, errorHandler);
-}
+};
 
 /*
  * Helper Function for I/O to validate the write operation
@@ -33404,44 +33380,43 @@ var writeFileEntry = function(writableFileEntry, blob, cbWriteFileEntry) {
 var waitForIO = function (writer, callbackIO) {
   // Set a watchdog to avoid eventual locking
   var start = Date.now();
-  var reentrant = function() {
+  var reentrant = function () {
     if (writer.readyState === writer.WRITING && Date.now() - start < 4000) {
       setTimeout(reentrant, 100);
       return;
     }
     if (writer.readyState === writer.WRITING) {
-      console.error("Write operation taking too long, aborting!" +
-          " (current writer readyState is " + writer.readyState + ")");
+      console.error('Write operation taking too long, aborting!' +
+          ' (current writer readyState is ' + writer.readyState + ')');
       writer.abort();
-    }
-    else {
+    } else {
       callbackIO();
     }
   };
   setTimeout(reentrant, 100);
-}
+};
 
 /*
  * Writes files to the seriesUID directory
  */
-var downloadFile = function(seriesUIDEntry, headerName, blob, cbDownloadFile) {
-  chrome.fileSystem.getWritableEntry(seriesUIDEntry, function(writableEntry) {
-    writableEntry.getFile(headerName, {create:true}, function(writableFileEntry) {
-      writeFileEntry(writableFileEntry, blob, function(errWriteFileEntry) {
-        if(!errWriteFileEntry) {
+var downloadFile = function (seriesUIDEntry, headerName, blob, cbDownloadFile) {
+  chrome.fileSystem.getWritableEntry(seriesUIDEntry, function (writableEntry) {
+    writableEntry.getFile(headerName, {create: true}, function (writableFileEntry) {
+      writeFileEntry(writableFileEntry, blob, function (errWriteFileEntry) {
+        if (!errWriteFileEntry) {
           cbDownloadFile(null);
         }
         else cbDownloadFile(errWriteFileEntry);
       });
     });
   });
-}
+};
 
 /*
  * Upserts series downloadStatus
  */
-var updateSeriesDownloadStatus = function(db, seriesUIDShort, downloadStatus, cbUpdateSeriesDownloadFlag) {
-  db.tciaSchema.findOne({'seriesUIDShort': seriesUIDShort}, {}, function(doc) {
+var updateSeriesDownloadStatus = function (db, seriesUIDShort, downloadStatus, cbUpdateSeriesDownloadFlag) {
+  db.tciaSchema.findOne({'seriesUIDShort': seriesUIDShort}, {}, function (doc) {
     db.tciaSchema.upsert({
       '_id': doc._id,
       'type': doc.type,
@@ -33454,27 +33429,27 @@ var updateSeriesDownloadStatus = function(db, seriesUIDShort, downloadStatus, cb
       'downloadStatus': downloadStatus,
       'downloadedSize': doc.downloadedSize,
       'files': doc.files
-    }, function() {
+    }, function () {
       cbUpdateSeriesDownloadFlag();
     });
   });
-}
+};
 
 /*
  * Appends headerName to the files array
  */
 var updateFilesArray = function (files, headerName, cbUpdateFilesArray) {
   var fileItem = headerName;
-  var files = files.concat([fileItem]);
+  files = files.concat([fileItem]);
   cbUpdateFilesArray(files);
-}
+};
 
 /*
  * Upserts the files to the appropriate series document
  */
-var updateFileDB = function(db, seriesUIDShort, headerName, bufferSize, cbUpdateFileDB) {
-  db.tciaSchema.findOne({'seriesUIDShort': seriesUIDShort}, {}, function(doc) {
-    updateFilesArray(doc.files, headerName, function(files) {
+var updateFileDB = function (db, seriesUIDShort, headerName, bufferSize, cbUpdateFileDB) {
+  db.tciaSchema.findOne({'seriesUIDShort': seriesUIDShort}, {}, function (doc) {
+    updateFilesArray(doc.files, headerName, function (files) {
       db.tciaSchema.upsert({
         '_id': doc._id,
         'type': doc.type,
@@ -33487,23 +33462,23 @@ var updateFileDB = function(db, seriesUIDShort, headerName, bufferSize, cbUpdate
         'downloadStatus': doc.downloadStatus,
         'downloadedSize': doc.downloadedSize + bufferSize,
         'files': files
-      }, function() {
+      }, function () {
         cbUpdateFileDB();
       });
     });
   });
-}
+};
 
 /*
  * Fetch tar, parse it and download files on-the-fly to user's chosen directory
  * maintaining appropriate folder hierarchy
  */
-var fetchAndParseTar = function(db, item, href, jnlpPassword, cbFetchAndParseTar){
+var fetchAndParseTar = function (db, item, href, jnlpPassword, cbFetchAndParseTar) {
   var url = parseURL(href);
-  var chunkDownload = 0,
-      updateLength = 0,
-      prevDownloadedSize = item.downloadedSize;
-  console.log(item.seriesUIDShort + " downloadedSize " + prevDownloadedSize);
+  var chunkDownload = 0;
+  var updateLength = 0;
+  var prevDownloadedSize = item.downloadedSize;
+  console.log(item.seriesUIDShort + ' downloadedSize ' + prevDownloadedSize);
   var options = {
     protocol: url.protocol,
     host: url.host,
@@ -33513,15 +33488,14 @@ var fetchAndParseTar = function(db, item, href, jnlpPassword, cbFetchAndParseTar
     headers: {'password': jnlpPassword}    // custom headers
   };
 
-  var req = http.request(options, function(res){
+  var req = http.request(options, function (res) {
     var tarParser = tar.extract();
 
     res.on('data', function (chunk) {
       chunkDownload += chunk.length;
-      updateLength = Math.round(((chunkDownload*1.0/1024/1024) + prevDownloadedSize)/item.size*100);
-      if(updateLength > 100)
-        updateLength = 100;
-      dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 6).data(updateLength+"%").draw();
+      updateLength = Math.round(((chunkDownload * 1.0 / 1024 / 1024) + prevDownloadedSize) / item.size * 100);
+      if (updateLength > 100) updateLength = 100;
+      dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 6).data(updateLength + '%').draw();
       // Transforming the 'arraybuffer' to 'Buffer' for compatibility with the Stream API
       tarParser.write(new Buffer(chunk));
     });
@@ -33534,155 +33508,148 @@ var fetchAndParseTar = function(db, item, href, jnlpPassword, cbFetchAndParseTar
     });
 
     // For each file entry, do the following
-    tarParser.on('entry', function(header, stream, callback) {
-      console.log("File found " + header.name + " of size ~" +
-          Math.round((header.size*1.0)/1024/1024*100)/100 + " MB");
+    tarParser.on('entry', function (header, stream, callback) {
+      console.log('File found ' + header.name + ' of size ~' +
+          Math.round((header.size * 1.0) / 1024 / 1024 * 100) / 100 + ' MB');
 
       var buffer = [];
-      stream.on('data', function(data) {
+      stream.on('data', function (data) {
         buffer.push(data);
       });
 
-      stream.on('end', function() {
+      stream.on('end', function () {
         buffer = Buffer.concat(buffer);
-        //console.log("buffer size MB " + (buffer.length*1.0)/1024/1024);
+        // console.log("buffer size MB " + (buffer.length*1.0)/1024/1024);
         // getSeriesUIDFolder to download the tar files to that directory
-        getSeriesUIDFolder(db, item.seriesUIDShort, function(seriesUIDEntry) {
-          if(seriesUIDEntry) {
-            var blob = new Blob([buffer], {type: 'application/octet-binary'});
+        getSeriesUIDFolder(db, item.seriesUIDShort, function (seriesUIDEntry) {
+          if (seriesUIDEntry) {
+            var blob = new Blob([buffer], {type: 'application/octet-binary'}); // eslint-disable-line no-undef
             downloadFile(seriesUIDEntry, header.name, blob,
-                function(errDownloadFile) {
-                  if(!errDownloadFile) {
-                    var bufferSize = Math.round((buffer.length*1.0)/1024/1024*100)/100;
+                function (errDownloadFile) {
+                  if (!errDownloadFile) {
+                    var bufferSize = Math.round((buffer.length * 1.0) / 1024 / 1024 * 100) / 100;
                     // update file entry in DB
-                    updateFileDB(db, item.seriesUIDShort, header.name, bufferSize, function() {
+                    updateFileDB(db, item.seriesUIDShort, header.name, bufferSize, function () {
                       buffer = [];
-                      console.log("<< EOF >>");
+                      console.log('<< EOF >>');
                       callback();
                     });
-                  }
-                  else {
+                  } else {
                     console.log(errDownloadFile);
                     callback();
                   }
                 });
-          }
-          else {
-            console.log("Error: seriesUID fsPath not present in DB");
+          } else {
+            console.log('Error: seriesUID fsPath not present in DB');
             callback();
           }
         });
       })
 
-      .on('error', function(err) {
+      .on('error', function (err) {
         console.log(err);
         cbFetchAndParseTar(err);
       });
-      //stream.resume();
+      // stream.resume();
     })
 
-    .on('error', function(err) {
+    .on('error', function (err) {
       console.log(err);
       cbFetchAndParseTar(err);
     })
 
-    .on('finish', function(){
-      console.log("Tar files processed successfully");
+    .on('finish', function () {
+      console.log('Tar files processed successfully');
       cbFetchAndParseTar(null);
     });
   });
 
-  req.on('error', function (e){
+  req.on('error', function (e) {
     console.log('problem with request: ' + e);
     cbFetchAndParseTar(e);
   });
 
   req.end();
-}
+};
 
 /*
  * Function to download series in parallel (max concurrency: 3)
  * First creates sopUIDsList and then calls fetchAndParseTar()
  */
-var downloadSeries = function(db, result, jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, cbDownloadSeries){
+var downloadSeries = function (db, result, jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, cbDownloadSeries) {
   // async download series in parallel (concurrency level: 3)
-  async.eachLimit(result, 3, function(item, callbackItem) {
+  async.eachLimit(result, 3, function (item, callbackItem) {
     async.waterfall([
-        // create sopUIDsList from DB for a particular series
-        function(cbSopUIDsList) {
-          db.tciaSchema.findOne({'seriesUIDShort': item.seriesUIDShort}, {}, function(doc) {
-            // if .dcm files are downloaded (and are less than 1000 to avoid
-            // SQL query failure at server)
-            if(doc.files && doc.files.length < 1000) {
-              var sopUIDsList = [];
-              async.each(doc.files, function(sopUID, cbAppendSopUID){
-                var pos = sopUID.indexOf(".dcm");
-                sopUIDsList.push("'" + sopUID.substring(0, pos) + "'");
-                cbAppendSopUID();
-              }, function(err) {
-                cbSopUIDsList(null, sopUIDsList.join(","));
+      // create sopUIDsList from DB for a particular series
+      function (cbSopUIDsList) {
+        db.tciaSchema.findOne({'seriesUIDShort': item.seriesUIDShort}, {}, function (doc) {
+          // if .dcm files are downloaded (and are less than 1000 to avoid
+          // SQL query failure at server)
+          if (doc.files && doc.files.length < 1000) {
+            var sopUIDsList = [];
+            async.each(doc.files, function (sopUID, cbAppendSopUID) {
+              var pos = sopUID.indexOf('.dcm');
+              sopUIDsList.push("'" + sopUID.substring(0, pos) + "'");
+              cbAppendSopUID();
+            }, function (err) { // eslint-disable-line handle-callback-err
+              cbSopUIDsList(null, sopUIDsList.join(','));
+            });
+          } else {
+            cbSopUIDsList(null, '');
+          }
+        });
+      },
+      // Call fetchAndParseTar() with apt URL and update series row when done
+      function (sopUIDsList, cbProcessSeries) {
+        var href = encodeURI('https://public.cancerimagingarchive.net/nbia-download/servlet/DownloadServlet?userId=' +
+            jnlpUserId + '&includeAnnotation=' + jnlpIncludeAnnotation +
+            '&hasAnnotation=' + item.hasAnnotation + '&seriesUid=' +
+            item.seriesUID + '&sopUids=' + sopUIDsList);
+        console.log(href);
+        dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Downloading').draw();
+
+        // Set {downloadStatus: 1} i.e. mark as 'encountered'
+        updateSeriesDownloadStatus(db, item.seriesUIDShort, 1, function () {
+          fetchAndParseTar(db, item, href, jnlpPassword, function (errFetchAndParseTar) {
+            if (!errFetchAndParseTar) {
+              // On success, set {downloadStatus: 2} i.e. mark as 'complete'
+              updateSeriesDownloadStatus(db, item.seriesUIDShort, 2, function () {
+                dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Complete').draw();
+                cbProcessSeries();
+              });
+            } else {
+              // On error, set {downloadStatus: 0} i.e. mark the error for
+              // series as 'not encountered' to try download again
+              updateSeriesDownloadStatus(db, item.seriesUIDShort, 0, function () {
+                dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 6).data('0%').draw();
+                dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Error').draw();
+                cbProcessSeries();
               });
             }
-            else {
-              cbSopUIDsList(null, "");
-            }
           });
-        },
-        // Call fetchAndParseTar() with apt URL and update series row when done
-        function(sopUIDsList, cbProcessSeries) {
-          var href = encodeURI('https://public.cancerimagingarchive.net/nbia-download/servlet/DownloadServlet?userId='
-              + jnlpUserId + '&includeAnnotation=' + jnlpIncludeAnnotation +
-              '&hasAnnotation=' + item.hasAnnotation + '&seriesUid=' +
-              item.seriesUID + '&sopUids=' + sopUIDsList);
-          console.log(href);
-          dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Downloading').draw();
-
-          // Set {downloadStatus: 1} i.e. mark as 'encountered'
-          updateSeriesDownloadStatus(db, item.seriesUIDShort, 1, function() {
-            fetchAndParseTar(db, item, href, jnlpPassword, function(errFetchAndParseTar) {
-              if(!errFetchAndParseTar) {
-                  // On success, set {downloadStatus: 2} i.e. mark as 'complete'
-                  updateSeriesDownloadStatus(db, item.seriesUIDShort, 2, function() {
-                    dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Complete').draw();
-                    cbProcessSeries();
-                  });
-              }
-              else {
-                // On error, set {downloadStatus: 0} i.e. mark the error for
-                // series as 'not encountered' to try download again
-                updateSeriesDownloadStatus(db, item.seriesUIDShort, 0, function() {
-                  dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 6).data("0%").draw();
-                  dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Error').draw();
-                  cbProcessSeries();
-                });
-              }
-            });
-          });
-        }
-    ], function (err, result) {
+        });
+      }
+    ], function (err, result) { // eslint-disable-line handle-callback-err
       callbackItem();
     });
-
-  }, function(errSeriesProcess) {
+  }, function (errSeriesProcess) {
     db.tciaSchema.find({
-      'type': "seriesDetails",
-      "downloadStatus": {$ne: 2}
-      }).fetch(function(result) {
-        // If downloadStatus for all the series is 0
-        if(result.length == 0) {
-          cbDownloadSeries(null);
-        }
+      'type': 'seriesDetails',
+      'downloadStatus': {$ne: 2}
+    }).fetch(function (result) {
+      // If downloadStatus for all the series is 0
+      if (result.length === 0) {
+        cbDownloadSeries(null);
+      } else {
         // For all series with downloadStatus != 2, download them again
-        else {
-          console.log("Series download count " + result.length);
-          downloadSeries(db, result, jnlpUserId, jnlpPassword,
-              jnlpIncludeAnnotation, function() {
-                cbDownloadSeries(null);
-              });
-        }
-      });
+        console.log('Series download count ' + result.length);
+        downloadSeries(db, result, jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, function () {
+          cbDownloadSeries(null);
+        });
+      }
+    });
   });
-}
+};
 
 /*
  * Takes jnlp arguments and initializes download of all the non-completed series
@@ -33694,66 +33661,63 @@ var downloadSeries = function(db, result, jnlpUserId, jnlpPassword, jnlpIncludeA
  * 1 => encountered but not complete yet
  * 2 => completed
  */
-var initDownloadMgr = function(jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, cbInitDownloadMgr) {
-  new IndexedDb({namespace: "mydb"}, function(db) {
-    db.addCollection("tciaSchema", function() {
+var initDownloadMgr = function (jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, cbInitDownloadMgr) {
+  new IndexedDb({namespace: 'mydb'}, function (db) { // eslint-disable-line no-new
+    db.addCollection('tciaSchema', function () {
       async.series([
-          // Step1: Updating rows in DataTable
-          function(cbStep1){
-            db.tciaSchema.find({
-              'type': "seriesDetails",
-              "downloadStatus": {$ne: 0}
-            }).fetch(function(result) {
-              if(result.length) {
-                output.innerHTML = "Updating rows ...";
+        // Step1: Updating rows in DataTable
+        function (cbStep1) {
+          db.tciaSchema.find({
+            'type': 'seriesDetails',
+            'downloadStatus': {$ne: 0}
+          }).fetch(function (result) {
+            if (result.length) {
+              output.innerHTML = 'Updating rows ...';
+            }
+            async.each(result, function (item, cbUpdateRow) {
+              if (item.downloadStatus === 1) {
+                dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 6).data(Math.round(item.downloadedSize / item.size * 100) + '%').draw();
+                dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Incomplete').draw();
+              } else if (item.downloadStatus === 2) {
+                dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 6).data('100%').draw();
+                dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Complete').draw();
               }
-              async.each(result, function(item, cbUpdateRow) {
-                if(item.downloadStatus == 1) {
-                  dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 6).data(Math.round(item.downloadedSize/item.size*100) + "%").draw();
-                  dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Incomplete').draw();
-                }
-                else if(item.downloadStatus == 2) {
-                  dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 6).data("100%").draw();
-                  dTable.cell(dTable.row("[id='row_" + item.seriesUIDShort + "']").node(), 7).data('Complete').draw();
-                }
-                cbUpdateRow();
-              }, function(errUpdateRow) {
-                cbStep1(null, 'Updated all rows');
-              });
+              cbUpdateRow();
+            }, function (errUpdateRow) {
+              cbStep1(null, 'Updated all rows');
             });
-          },
-          // Step2: download series with downloadStatus != 2
-          function(cbStep2){
-            output.innerHTML = "Download started ...";
-            db.tciaSchema.find({
-              'type': "seriesDetails",
-              "downloadStatus": {$ne: 2}
-            }).fetch(function(result) {
-              if(!result.length) {
-                db.removeCollection("tciaSchema", function(){
+          });
+        },
+        // Step2: download series with downloadStatus != 2
+        function (cbStep2) {
+          output.innerHTML = 'Download started ...';
+          db.tciaSchema.find({
+            'type': 'seriesDetails',
+            'downloadStatus': {$ne: 2}
+          }).fetch(function (result) {
+            if (!result.length) {
+              db.removeCollection('tciaSchema', function () {
+                cbStep2(null, 'All series downloaded successfully');
+              });
+            } else {
+              console.log('Series download count ' + result.length);
+              downloadSeries(db, result, jnlpUserId, jnlpPassword, jnlpIncludeAnnotation, function () {
+                db.removeCollection('tciaSchema', function () {
                   cbStep2(null, 'All series downloaded successfully');
                 });
-              }
-              else {
-                console.log("Series download count " + result.length);
-                downloadSeries(db, result, jnlpUserId, jnlpPassword,
-                    jnlpIncludeAnnotation, function() {
-                      db.removeCollection("tciaSchema", function(){ 
-                        cbStep2(null, 'All series downloaded successfully');
-                      });
-                    });
-              }
-            });
-          }
+              });
+            }
+          });
+        }
       ],
-      function(err, results){
+      function (err, results) { // eslint-disable-line handle-callback-err
         cbInitDownloadMgr();
       });
     });
-  }, function(err) {
+  }, function (err) {
     console.log(err);
   });
-}
+};
 
 // Standalone export variable to include all modules in 'app.js'
 var bundle = {
@@ -33769,5 +33733,5 @@ var bundle = {
 module.exports = bundle;
 
 }).call(this,require("buffer").Buffer)
-},{"./createFolderHierarchy":1,"./execute":2,"./fetchJnlp":3,"./restoreState":4,"./storeSchema":5,"./updateRows":6,"async":7,"buffer":45,"http":50,"https":54,"minimongo":8,"tar-stream":26}]},{},[78])(78)
+},{"./createFolderHierarchy":1,"./execute":2,"./fetchJnlp":3,"./restoreState":4,"./storeSchema":5,"./updateRows":6,"async":7,"buffer":45,"http":50,"minimongo":8,"tar-stream":26}]},{},[77])(77)
 });
