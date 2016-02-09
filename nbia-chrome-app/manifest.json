@@ -11,19 +11,23 @@
   },
   "permissions": [
     {"fileSystem": ["write", "retainEntries", "directory"]},
-    "https://researchweb.iiit.ac.in/*",
+    "https://*.iiit.ac.in/*",
     "https://*.cancerimagingarchive.net/*",
     "http://54.68.32.118/*"
   ],
   "url_handlers": {
     "OpenDownloadManager": {
       "matches": [
-        "http://researchweb.iiit.ac.in/~tejas.shah/gsoc15/demoApp/launch"
+        "*://researchweb.iiit.ac.in/~tejas.shah/gsoc15/demoApp/launch",
+        "*://wiki.cancerimagingarchive.net/display/nbia-download-manager/launch"
       ],
         "title": "Open Download Manager"
     }
   },
   "externally_connectable": {
-    "matches": ["https://researchweb.iiit.ac.in/*"]
+    "matches": [
+      "*://*.iiit.ac.in/*",
+      "*://*.cancerimagingarchive.net/*"
+    ]
   }
 }
